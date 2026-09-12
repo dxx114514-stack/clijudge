@@ -209,17 +209,17 @@ inline int cmdCount(const std::string& dataDir) {
 inline int cmdCreate(const std::string& dataDir, const std::string& title, const std::string& mdPath = "") {
     ArticleStore store(dataDir);
     int id = store.create(title, mdPath);
-    std::cout << "Article created with ID: " << id << std::endl;
+    std::cout << "文章已创建，编号: " << id << std::endl;
     return 0;
 }
 
 inline int cmdDelete(const std::string& dataDir, int id) {
     ArticleStore store(dataDir);
     if (store.deleteArticle(id)) {
-        std::cout << "Article " << id << " deleted." << std::endl;
+        std::cout << "文章 " << id << " 已删除。" << std::endl;
         return 0;
     } else {
-        std::cerr << "Article " << id << " not found." << std::endl;
+        std::cerr << "文章 " << id << " 未找到。" << std::endl;
         return 1;
     }
 }
@@ -235,7 +235,7 @@ inline int cmdView(const std::string& dataDir, int id) {
     ArticleStore store(dataDir);
     json article = store.view(id);
     if (article.is_null()) {
-        std::cerr << "Article " << id << " not found." << std::endl;
+        std::cerr << "文章 " << id << " 未找到。" << std::endl;
         return 1;
     }
     std::cout << article.dump(2) << std::endl;

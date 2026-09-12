@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, zh ]
 
 permissions:
   contents: write
@@ -65,7 +65,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: judgelite-windows
+          name: judgelite-windows-${{ github.ref_name }}
           path: judgelite.exe
       
       - name: Create Release

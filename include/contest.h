@@ -260,17 +260,17 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
                      const std::vector<int>& problemIds) {
     ContestStore store(dataDir);
     int id = store.create(title, startTime, endTime, problemIds);
-    std::cout << "Contest created with ID: " << id << std::endl;
+    std::cout << "比赛已创建，编号: " << id << std::endl;
     return 0;
 }
 
 inline int cmdDelete(const std::string& dataDir, int id) {
     ContestStore store(dataDir);
     if (store.deleteContest(id)) {
-        std::cout << "Contest " << id << " deleted." << std::endl;
+        std::cout << "比赛 " << id << " 已删除。" << std::endl;
         return 0;
     } else {
-        std::cerr << "Contest " << id << " not found." << std::endl;
+        std::cerr << "比赛 " << id << " 未找到。" << std::endl;
         return 1;
     }
 }
@@ -279,7 +279,7 @@ inline int cmdView(const std::string& dataDir, int id) {
     ContestStore store(dataDir);
     json contest = store.view(id);
     if (contest.is_null()) {
-        std::cerr << "Contest " << id << " not found." << std::endl;
+        std::cerr << "比赛 " << id << " 未找到。" << std::endl;
         return 1;
     }
     std::cout << contest.dump(2) << std::endl;
@@ -290,11 +290,10 @@ inline int cmdProblemSubmit(const std::string& dataDir, int contestId,
                             int problemIndex, const std::string& filePath) {
     ContestStore store(dataDir);
     if (store.submitProblem(contestId, problemIndex, filePath)) {
-        std::cout << "Submission accepted for contest " << contestId
-                  << " problem " << problemIndex << std::endl;
+        std::cout << "比赛 " << contestId << " 题目 " << problemIndex << " 提交成功。" << std::endl;
         return 0;
     } else {
-        std::cerr << "Failed to submit: invalid contest or problem index." << std::endl;
+        std::cerr << "提交失败：无效的比赛或题目索引。" << std::endl;
         return 1;
     }
 }

@@ -606,17 +606,17 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
         store.edit(id, updates);
     }
 
-    std::cout << "Problem created with ID: " << id << std::endl;
+    std::cout << "题目已创建，编号: " << id << std::endl;
     return 0;
 }
 
 inline int cmdDelete(const std::string& dataDir, int id) {
     ProblemStore store(dataDir);
     if (store.deleteProblem(id)) {
-        std::cout << "Problem " << id << " deleted." << std::endl;
+        std::cout << "题目 " << id << " 已删除。" << std::endl;
         return 0;
     } else {
-        std::cerr << "Problem " << id << " not found." << std::endl;
+        std::cerr << "题目 " << id << " 未找到。" << std::endl;
         return 1;
     }
 }
@@ -625,34 +625,34 @@ inline int cmdView(const std::string& dataDir, int id) {
     ProblemStore store(dataDir);
     json problem = store.view(id);
     if (problem.is_null()) {
-        std::cerr << "Problem " << id << " not found." << std::endl;
+        std::cerr << "题目 " << id << " 未找到。" << std::endl;
         return 1;
     }
 
     const auto& p = problem["problem"];
 
     // 格式化显示题面
-    std::cout << "=== Problem " << p.value("id", 0) << " ===" << std::endl;
-    std::cout << "Title: " << p.value("title", "") << std::endl;
+    std::cout << "=== 题目 " << p.value("id", 0) << " ===" << std::endl;
+    std::cout << "标题: " << p.value("title", "") << std::endl;
     std::cout << std::endl;
 
     std::string desc = p.value("description", "");
     if (!desc.empty()) {
-        std::cout << "## Description" << std::endl;
+        std::cout << "## 题目描述" << std::endl;
         std::cout << desc << std::endl;
         std::cout << std::endl;
     }
 
     std::string inputDesc = p.value("input_desc", "");
     if (!inputDesc.empty()) {
-        std::cout << "## Input" << std::endl;
+        std::cout << "## 输入格式" << std::endl;
         std::cout << inputDesc << std::endl;
         std::cout << std::endl;
     }
 
     std::string outputDesc = p.value("output_desc", "");
     if (!outputDesc.empty()) {
-        std::cout << "## Output" << std::endl;
+        std::cout << "## 输出格式" << std::endl;
         std::cout << outputDesc << std::endl;
         std::cout << std::endl;
     }
@@ -660,15 +660,15 @@ inline int cmdView(const std::string& dataDir, int id) {
     std::string sampleIn = p.value("sample_input", "");
     std::string sampleOut = p.value("sample_output", "");
     if (!sampleIn.empty() || !sampleOut.empty()) {
-        std::cout << "## Sample Input/Output" << std::endl;
+        std::cout << "## 样例输入/输出" << std::endl;
         if (!sampleIn.empty()) {
-            std::cout << "Input:" << std::endl;
+            std::cout << "输入:" << std::endl;
             std::cout << "```" << std::endl;
             std::cout << sampleIn << std::endl;
             std::cout << "```" << std::endl;
         }
         if (!sampleOut.empty()) {
-            std::cout << "Output:" << std::endl;
+            std::cout << "输出:" << std::endl;
             std::cout << "```" << std::endl;
             std::cout << sampleOut << std::endl;
             std::cout << "```" << std::endl;
@@ -678,16 +678,16 @@ inline int cmdView(const std::string& dataDir, int id) {
 
     std::string hint = p.value("hint", "");
     if (!hint.empty()) {
-        std::cout << "## Hint" << std::endl;
+        std::cout << "## 提示" << std::endl;
         std::cout << hint << std::endl;
         std::cout << std::endl;
     }
 
-    std::cout << "## Limits" << std::endl;
-    std::cout << "Time Limit: " << p.value("time_limit", 1000) << " ms" << std::endl;
-    std::cout << "Memory Limit: " << p.value("memory_limit", 256) << " MB" << std::endl;
-    std::cout << "Public: " << (p.value("is_public", true) ? "Yes" : "No") << std::endl;
-    std::cout << "Hidden: " << (p.value("is_hidden", false) ? "Yes" : "No") << std::endl;
+    std::cout << "## 限制" << std::endl;
+    std::cout << "时间限制: " << p.value("time_limit", 1000) << " 毫秒" << std::endl;
+    std::cout << "内存限制: " << p.value("memory_limit", 256) << " MB" << std::endl;
+    std::cout << "公开: " << (p.value("is_public", true) ? "是" : "否") << std::endl;
+    std::cout << "隐藏: " << (p.value("is_hidden", false) ? "是" : "否") << std::endl;
 
     // Special Judge 相关信息
     std::string problemType = p.value("problem_type", "traditional");
@@ -695,23 +695,23 @@ inline int cmdView(const std::string& dataDir, int id) {
     
     if (problemType != "traditional" || compareMode != "text_strict") {
         std::cout << std::endl;
-        std::cout << "## Special Judge" << std::endl;
-        std::cout << "Problem Type: " << problemType << std::endl;
-        std::cout << "Compare Mode: " << compareMode << std::endl;
+        std::cout << "## 特殊评测" << std::endl;
+        std::cout << "题目类型: " << problemType << std::endl;
+        std::cout << "比较模式: " << compareMode << std::endl;
         
         if (compareMode == "float_abs" || compareMode == "float_rel" || compareMode == "float_all") {
-            std::cout << "Float Abs Tolerance: " << p.value("float_abs_tolerance", 0.0) << std::endl;
-            std::cout << "Float Rel Tolerance: " << p.value("float_rel_tolerance", 0.0) << std::endl;
+            std::cout << "浮点绝对误差: " << p.value("float_abs_tolerance", 0.0) << std::endl;
+            std::cout << "浮点相对误差: " << p.value("float_rel_tolerance", 0.0) << std::endl;
         }
         
         std::string specialJudgeExe = p.value("special_judge_exe", "");
         if (!specialJudgeExe.empty()) {
-            std::cout << "Special Judge Exe: " << specialJudgeExe << std::endl;
+            std::cout << "特殊评测程序: " << specialJudgeExe << std::endl;
         }
         
         const auto& allowedLangs = p.value("allowed_languages", json::array());
         if (!allowedLangs.empty()) {
-            std::cout << "Allowed Languages: ";
+            std::cout << "允许的语言: ";
             for (size_t i = 0; i < allowedLangs.size(); i++) {
                 if (i > 0) std::cout << ", ";
                 std::cout << allowedLangs[i].get<std::string>();
@@ -780,15 +780,15 @@ inline int cmdEdit(const std::string& dataDir, int id,
     }
 
     if (updates.empty()) {
-        std::cerr << "No updates specified." << std::endl;
+        std::cerr << "未指定更新内容。" << std::endl;
         return 1;
     }
 
     if (store.edit(id, updates)) {
-        std::cout << "Problem " << id << " updated." << std::endl;
+        std::cout << "题目 " << id << " 已更新。" << std::endl;
         return 0;
     } else {
-        std::cerr << "Problem " << id << " not found." << std::endl;
+        std::cerr << "题目 " << id << " 未找到。" << std::endl;
         return 1;
     }
 }
@@ -804,10 +804,10 @@ inline int cmdSubmit(const std::string& dataDir, int problemId, const std::strin
     ProblemStore store(dataDir);
     auto submission = store.submit(problemId, filePath);
 
-    std::cout << "Submission Result:" << std::endl;
-    std::cout << "  Status: " << submission.status << std::endl;
-    std::cout << "  Time: " << submission.timeUsed << " ms" << std::endl;
-    std::cout << "  Memory: " << submission.memoryUsed << " KB" << std::endl;
+    std::cout << "提交结果:" << std::endl;
+    std::cout << "  状态: " << submission.status << std::endl;
+    std::cout << "  时间: " << submission.timeUsed << " 毫秒" << std::endl;
+    std::cout << "  内存: " << submission.memoryUsed << " KB" << std::endl;
 
     return (submission.status == "accepted") ? 0 : 1;
 }
@@ -829,12 +829,12 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     // 读取文件内容
     std::string inContent = readFileContent(inputData);
     if (inContent.empty()) {
-        std::cerr << "Failed to read input file: " << inputData << std::endl;
+        std::cerr << "无法读取输入文件: " << inputData << std::endl;
         return 1;
     }
     std::string outContent = readFileContent(outputData);
     if (outContent.empty()) {
-        std::cerr << "Failed to read output file: " << outputData << std::endl;
+        std::cerr << "无法读取输出文件: " << outputData << std::endl;
         return 1;
     }
     TestCase tc;
@@ -849,10 +849,10 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     tc.sortOrder = nextId;
 
     if (store.addTestCase(problemId, tc)) {
-        std::cout << "Test case created with ID: " << tc.id << std::endl;
+        std::cout << "测试点已创建，编号: " << tc.id << std::endl;
         return 0;
     } else {
-        std::cerr << "Failed to create test case." << std::endl;
+        std::cerr << "创建测试点失败。" << std::endl;
         return 1;
     }
 }
@@ -860,10 +860,10 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
 inline int cmdTestDataDelete(const std::string& dataDir, int problemId, int testCaseId) {
     ProblemStore store(dataDir);
     if (store.deleteTestCase(problemId, testCaseId)) {
-        std::cout << "Test case " << testCaseId << " deleted." << std::endl;
+        std::cout << "测试点 " << testCaseId << " 已删除。" << std::endl;
         return 0;
     } else {
-        std::cerr << "Test case " << testCaseId << " not found." << std::endl;
+        std::cerr << "测试点 " << testCaseId << " 未找到。" << std::endl;
         return 1;
     }
 }
@@ -872,10 +872,10 @@ inline int cmdTestDataSetAll(const std::string& dataDir, int problemId,
                              int timeLimit = -1, int memoryLimit = -1, int score = -1) {
     ProblemStore store(dataDir);
     if (store.setAllTestCaseDefaults(problemId, timeLimit, memoryLimit, score)) {
-        std::cout << "All test cases updated." << std::endl;
+        std::cout << "所有测试点已更新。" << std::endl;
         return 0;
     } else {
-        std::cerr << "Failed to update test cases." << std::endl;
+        std::cerr << "更新测试点失败。" << std::endl;
         return 1;
     }
 }
@@ -884,7 +884,7 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
     ProblemStore store(dataDir);
     json problem = store.exportProblem(problemId);
     if (problem.is_null()) {
-        std::cerr << "Problem " << problemId << " not found." << std::endl;
+        std::cerr << "题目 " << problemId << " 未找到。" << std::endl;
         return 1;
     }
 
@@ -922,7 +922,7 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
 
     if (isZip) {
         // ZIP 格式导出（需要 miniz 库支持）
-        std::cerr << "ZIP export requires miniz library. Use .json format instead." << std::endl;
+        std::cerr << "ZIP导出需要miniz库支持，请使用.json格式。" << std::endl;
         return 1;
     }
 
@@ -931,17 +931,17 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
     if (f.is_open()) {
         f << exportData.dump(2);
         f.close();
-        std::cout << "Problem exported to: " << outputPath << std::endl;
+        std::cout << "题目已导出到: " << outputPath << std::endl;
         return 0;
     } else {
-        std::cerr << "Failed to create export file." << std::endl;
+        std::cerr << "创建导出文件失败。" << std::endl;
         return 1;
     }
 }
 
 inline int cmdImport(const std::string& dataDir, const std::string& importPath) {
     if (!fs::exists(importPath)) {
-        std::cerr << "Import file not found: " << importPath << std::endl;
+        std::cerr << "导入文件未找到: " << importPath << std::endl;
         return 1;
     }
 
@@ -954,13 +954,13 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
     }
 
     if (isZip) {
-        std::cerr << "ZIP import requires miniz library. Use .json format instead." << std::endl;
+        std::cerr << "ZIP导入需要miniz库支持，请使用.json格式。" << std::endl;
         return 1;
     }
 
     std::ifstream f(importPath);
     if (!f.is_open()) {
-        std::cerr << "Failed to open import file." << std::endl;
+        std::cerr << "打开导入文件失败。" << std::endl;
         return 1;
     }
 
@@ -969,7 +969,7 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         f >> problemData;
         f.close();
     } catch (const json::parse_error& e) {
-        std::cerr << "Failed to parse import file: " << e.what() << std::endl;
+        std::cerr << "解析导入文件失败: " << e.what() << std::endl;
         return 1;
     }
 
@@ -979,10 +979,10 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         ProblemStore store(dataDir);
         int id = store.importProblem(problemData);
         if (id > 0) {
-            std::cout << "Problem imported with ID: " << id << std::endl;
+            std::cout << "题目已导入，编号: " << id << std::endl;
             return 0;
         } else {
-            std::cerr << "Failed to import problem." << std::endl;
+            std::cerr << "导入题目失败。" << std::endl;
             return 1;
         }
     }
@@ -991,15 +991,15 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         ProblemStore store(dataDir);
         int id = store.importProblem(problemData);
         if (id > 0) {
-            std::cout << "Problem imported with ID: " << id << std::endl;
+            std::cout << "题目已导入，编号: " << id << std::endl;
             return 0;
         } else {
-            std::cerr << "Failed to import problem." << std::endl;
+            std::cerr << "导入题目失败。" << std::endl;
             return 1;
         }
     }
     else {
-        std::cerr << "Invalid import format. Expected NoldOJ or JudgeLite format." << std::endl;
+        std::cerr << "无效的导入格式，期望NoldOJ或JudgeLite格式。" << std::endl;
         return 1;
     }
 }

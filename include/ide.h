@@ -88,7 +88,7 @@ void cleanupWorkDir(const std::string& workDir) {
 int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
     // 验证代码文件存在
     if (!fs::exists(codePath)) {
-        std::cerr << "Error: Code file not found: " << codePath << std::endl;
+        std::cerr << "错误: 代码文件未找到: " << codePath << std::endl;
         return 1;
     }
 
@@ -118,14 +118,14 @@ int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
 
     // 输出结果
     if (result.success) {
-        std::cout << "Exit Code: " << result.exitCode << std::endl;
-        std::cout << "Time Used: " << result.timeUsedMs << " ms" << std::endl;
-        std::cout << "Memory Used: " << result.memoryUsedKB << " KB" << std::endl;
+        std::cout << "退出码: " << result.exitCode << std::endl;
+        std::cout << "用时: " << result.timeUsedMs << " 毫秒" << std::endl;
+        std::cout << "内存: " << result.memoryUsedKB << " KB" << std::endl;
         if (strcmp(result.signal, "null") != 0) {
-            std::cout << "Signal: " << result.signal << std::endl;
+            std::cout << "信号: " << result.signal << std::endl;
         }
     } else {
-        std::cerr << "Failed to run code in sandbox." << std::endl;
+        std::cerr << "沙箱运行代码失败。" << std::endl;
     }
 
     // 清理临时目录
@@ -136,10 +136,10 @@ int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
 
 // 显示帮助信息
 void showHelp() {
-    std::cout << "IDE Commands:" << std::endl;
-    std::cout << "  run [code_path] [input_path] - Run code with optional input file" << std::endl;
+    std::cout << "IDE 命令:" << std::endl;
+    std::cout << "  run [代码路径] [输入文件路径] - 运行代码（可选输入文件）" << std::endl;
     std::cout << std::endl;
-    std::cout << "Supported languages:" << std::endl;
+    std::cout << "支持的语言:" << std::endl;
     std::cout << "  C/C++ (.cpp, .cc, .cxx, .c)" << std::endl;
     std::cout << "  Python (.py)" << std::endl;
     std::cout << "  Java (.java)" << std::endl;
