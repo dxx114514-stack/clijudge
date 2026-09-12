@@ -800,13 +800,21 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     json testCases = store.getTestCases(problemId);
     int nextId = testCases.empty() ? 1 : testCases.back().value("id", 0) + 1;
 
+    // 读取文件内容
+    std::string inContent = readFileContent(inputData);
+    if (inContent.empty()) {
+        std::cerr << "Failed to read input file: " << inputData << std::endl;
+        return 1;
+    }
+    std::string outContent = readFileContent(outputData);
+    if (outContent.empty()) {
+        std::cerr << "Failed to read output file: " << outputData << std::endl;
+        return 1;
+    }
     TestCase tc;
     tc.id = nextId;
-    // 读取文件内容或使用内联内容
-    std::string inContent = readFileContent(inputData);
-    tc.inputData = inContent.empty() ? inputData : inContent;
-    std::string outContent = readFileContent(outputData);
-    tc.outputData = outContent.empty() ? outputData : outContent;
+    tc.inputData = inContent;
+    tc.outputData = outContent;
     tc.inputFile = "";
     tc.outputFile = "";
     tc.score = score;
