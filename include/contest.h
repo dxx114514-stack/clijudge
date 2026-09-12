@@ -1,0 +1,311 @@
+#ifndef JUDGELITE_CONTEST_H
+#define JUDGELITE_CONTEST_H
+
+// contest.h
+// JudgeLite 比赛管理子命令
+//
+// 子命令:
+//   create [标题] [开始时间] [结束时间] [题目1] [题目2] - 创建比赛
+//   delete [编号] - 删除比赛
+//   problem [编号] [题目在比赛中的编号]
+//     submit [文件地址] - 提交题目
+//     view - 查看题目
+//   view [编号] - 查看比赛
+
+#include <string>
+#include <vector>
+#include <fstream>
+#include <sstream>
+#include <iostream>
+#include <filesystem>
+#include "json.hpp"
+
+namespace judgelite {
+namespace contest {
+
+using json = nlohmann::json;
+namespace fs = std::filesystem;
+
+// 比赛数据结构
+struct Contest {
+    int id;
+    std::string title;
+    std::string startTime;
+    std::string endTime;
+    std::vector<int> problemIds;  // 题目ID列表
+    std::string createdAt;
+};
+
+// 比赛题目提交记录
+struct ContestSubmission {
+    int contestId;
+    int problemIndex;  // 题目在比赛中的编号（从1开始）
+    int problemId;     // 实际题目ID
+    std::string filePath;
+    std::string submittedAt;
+    std::string result;
+};
+
+// 数据存储类
+class ContestStore {
+private:
+    std::string dataDir;
+    json data;
+
+    void ensureDataDir() {
+        if (!fs::exists(dataDir)) {
+            fs::create_directories(dataDir);
+        }
+    }
+
+    std::string getContestPath(int id) {
+        return dataDir + "/contest_" + std::to_string(id) + ".json";
+    }
+
+    void loadIndex() {
+        std::string indexPath = dataDir + "/contests.json";
+        if (fs::exists(indexPath)) {
+            std::ifstream f(indexPath);
+            if (f.is_open()) {
+                f >> data;
+            }
+        }
+        if (data.empty()) {
+            data = json::array();
+        }
+    }
+
+    void saveIndex() {
+        ensureDataDir();
+        std::string indexPath = dataDir + "/contests.json";
+        std::ofstream f(indexPath);
+        if (f.is_open()) {
+            f << data.dump(2);
+        }
+    }
+
+    int getNextId() {
+        int maxId = 0;
+        for (const auto& item : data) {
+            if (item.contains("id") && item["id"].get<int>() > maxId) {
+                maxId = item["id"].get<int>();
+            }
+        }
+        return maxId + 1;
+    }
+
+public:
+    ContestStore(const std::string& dir) : dataDir(dir) {
+        loadIndex();
+    }
+
+    // 创建比赛
+    int create(const std::string& title, const std::string& startTime,
+               const std::string& endTime, const std::vector<int>& problemIds) {
+        int id = getNextId();
+
+        json contest = {
+            {"id", id},
+            {"title", title},
+            {"start_time", startTime},
+            {"end_time", endTime},
+            {"problem_ids", problemIds},
+            {"created_at", getCurrentTime()}
+        };
+
+        data.push_back(contest);
+        saveIndex();
+
+        // 保存比赛详情到单独文件
+        ensureDataDir();
+        std::ofstream f(getContestPath(id));
+        if (f.is_open()) {
+            f << contest.dump(2);
+        }
+
+        return id;
+    }
+
+    // 删除比赛
+    bool deleteContest(int id) {
+        for (auto it = data.begin(); it != data.end(); ++it) {
+            if (it->contains("id") && (*it)["id"].get<int>() == id) {
+                data.erase(it);
+                saveIndex();
+
+                // 删除比赛文件
+                std::string path = getContestPath(id);
+                if (fs::exists(path)) {
+                    fs::remove(path);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 查看比赛
+    json view(int id) {
+        for (const auto& item : data) {
+            if (item.contains("id") && item["id"].get<int>() == id) {
+                // 加载完整详情
+                std::string path = getContestPath(id);
+                if (fs::exists(path)) {
+                    std::ifstream f(path);
+                    if (f.is_open()) {
+                        json fullContest;
+                        f >> fullContest;
+                        return fullContest;
+                    }
+                }
+                return item;
+            }
+        }
+        return nullptr;
+    }
+
+    // 获取比赛中的题目ID
+    int getContestProblemId(int contestId, int problemIndex) {
+        json contest = view(contestId);
+        if (contest.is_null()) return -1;
+
+        if (contest.contains("problem_ids")) {
+            const auto& problemIds = contest["problem_ids"];
+            if (problemIndex >= 1 && problemIndex <= (int)problemIds.size()) {
+                return problemIds[problemIndex - 1].get<int>();
+            }
+        }
+        return -1;
+    }
+
+    // 提交比赛题目
+    bool submitProblem(int contestId, int problemIndex, const std::string& filePath) {
+        int problemId = getContestProblemId(contestId, problemIndex);
+        if (problemId < 0) return false;
+
+        // 保存提交记录
+        json submission = {
+            {"contest_id", contestId},
+            {"problem_index", problemIndex},
+            {"problem_id", problemId},
+            {"file_path", filePath},
+            {"submitted_at", getCurrentTime()},
+            {"result", "pending"}
+        };
+
+        ensureDataDir();
+        std::string submissionPath = dataDir + "/contest_" + std::to_string(contestId) +
+                                     "_problem_" + std::to_string(problemIndex) + "_submissions.json";
+
+        json submissions = json::array();
+        if (fs::exists(submissionPath)) {
+            std::ifstream f(submissionPath);
+            if (f.is_open()) {
+                f >> submissions;
+            }
+        }
+        submissions.push_back(submission);
+
+        std::ofstream f(submissionPath);
+        if (f.is_open()) {
+            f << submissions.dump(2);
+        }
+
+        return true;
+    }
+
+    // 查看比赛题目提交记录
+    json viewProblemSubmissions(int contestId, int problemIndex) {
+        std::string submissionPath = dataDir + "/contest_" + std::to_string(contestId) +
+                                     "_problem_" + std::to_string(problemIndex) + "_submissions.json";
+
+        if (fs::exists(submissionPath)) {
+            std::ifstream f(submissionPath);
+            if (f.is_open()) {
+                json submissions;
+                f >> submissions;
+                return submissions;
+            }
+        }
+        return json::array();
+    }
+
+    // 列出所有比赛
+    json list() {
+        return data;
+    }
+
+private:
+    std::string getCurrentTime() {
+        time_t now = time(nullptr);
+        char buf[64];
+        struct tm timeinfo;
+        localtime_s(&timeinfo, &now);
+        strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+        return std::string(buf);
+    }
+};
+
+// 子命令实现
+inline int cmdCreate(const std::string& dataDir, const std::string& title,
+                     const std::string& startTime, const std::string& endTime,
+                     const std::vector<int>& problemIds) {
+    ContestStore store(dataDir);
+    int id = store.create(title, startTime, endTime, problemIds);
+    std::cout << "Contest created with ID: " << id << std::endl;
+    return 0;
+}
+
+inline int cmdDelete(const std::string& dataDir, int id) {
+    ContestStore store(dataDir);
+    if (store.deleteContest(id)) {
+        std::cout << "Contest " << id << " deleted." << std::endl;
+        return 0;
+    } else {
+        std::cerr << "Contest " << id << " not found." << std::endl;
+        return 1;
+    }
+}
+
+inline int cmdView(const std::string& dataDir, int id) {
+    ContestStore store(dataDir);
+    json contest = store.view(id);
+    if (contest.is_null()) {
+        std::cerr << "Contest " << id << " not found." << std::endl;
+        return 1;
+    }
+    std::cout << contest.dump(2) << std::endl;
+    return 0;
+}
+
+inline int cmdProblemSubmit(const std::string& dataDir, int contestId,
+                            int problemIndex, const std::string& filePath) {
+    ContestStore store(dataDir);
+    if (store.submitProblem(contestId, problemIndex, filePath)) {
+        std::cout << "Submission accepted for contest " << contestId
+                  << " problem " << problemIndex << std::endl;
+        return 0;
+    } else {
+        std::cerr << "Failed to submit: invalid contest or problem index." << std::endl;
+        return 1;
+    }
+}
+
+inline int cmdProblemView(const std::string& dataDir, int contestId, int problemIndex) {
+    ContestStore store(dataDir);
+    json submissions = store.viewProblemSubmissions(contestId, problemIndex);
+    std::cout << submissions.dump(2) << std::endl;
+    return 0;
+}
+
+inline int cmdList(const std::string& dataDir) {
+    ContestStore store(dataDir);
+    json contests = store.list();
+    std::cout << contests.dump(2) << std::endl;
+    return 0;
+}
+
+} // namespace contest
+} // namespace judgelite
+
+#endif // JUDGELITE_CONTEST_H

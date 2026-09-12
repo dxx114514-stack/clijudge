@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>技术支持 - JudgeLite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            padding: 60px 20px;
+            color: white;
+        }
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .main-content {
+            background: white;
+            border-radius: 10px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 40px;
+        }
+        h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        h3 {
+            color: #495057;
+            margin: 25px 0 15px 0;
+        }
+        .faq-item {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .faq-item h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .faq-item p {
+            color: #666;
+        }
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 14px;
+            margin: 15px 0;
+        }
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .contact-card {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 8px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        .contact-card:hover {
+            transform: translateY(-3px);
+        }
+        .contact-card h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .contact-card p {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .btn {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 5px;
+            text-decoration: none;
+            margin: 10px;
+            transition: background 0.3s ease;
+        }
+        .btn:hover {
+            background: #5a6fd6;
+        }
+        .btn-secondary {
+            background: #6c757d;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        nav {
+            background: rgba(255,255,255,0.1);
+            padding: 15px 30px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 15px;
+            opacity: 0.9;
+        }
+        nav a:hover {
+            opacity: 1;
+        }
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: white;
+            opacity: 0.8;
+        }
+        .trouble-steps {
+            counter-reset: step;
+            list-style: none;
+            padding-left: 0;
+        }
+        .trouble-steps li {
+            counter-increment: step;
+            padding: 15px 15px 15px 50px;
+            position: relative;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .trouble-steps li::before {
+            content: counter(step);
+            position: absolute;
+            left: 15px;
+            background: #667eea;
+            color: white;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            .main-content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>技术支持</h1>
+            <p class="subtitle">获取帮助，解决问题</p>
+        </header>
+
+        <nav>
+            <a href="index.html">首页</a>
+            <a href="support.html">技术支持</a>
+            <a href="https://github.com">GitHub</a>
+        </nav>
+
+        <div class="main-content">
+            <h2>常见问题</h2>
+            
+            <div class="faq-item">
+                <h4>Q: 如何编译JudgeLite？</h4>
+                <p>A: 使用CMake编译：</p>
+                <div class="code-block">
+mkdir build
+cd build
+cmake ..
+cmake --build .
+                </div>
+                <p>或者使用g++直接编译：</p>
+                <div class="code-block">
+g++ -std=c++17 -O2 -o judgelite.exe src/main.cpp -lpsapi -luserenv -lole32
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h4>Q: 数据存储在哪里？</h4>
+                <p>A: 默认存储在可执行文件同级目录的 <code>data/</code> 文件夹下。可以通过设置环境变量 <code>JUDGELITE_DATA_DIR</code> 自定义存储位置。</p>
+            </div>
+
+            <div class="faq-item">
+                <h4>Q: 支持哪些编程语言？</h4>
+                <p>A: 目前支持以下语言：</p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>C/C++ (.cpp, .cc, .cxx, .c)</li>
+                    <li>Python (.py)</li>
+                    <li>Java (.java)</li>
+                    <li>JavaScript (.js)</li>
+                </ul>
+            </div>
+
+            <div class="faq-item">
+                <h4>Q: 如何导入导出题目？</h4>
+                <p>A: 使用以下命令：</p>
+                <div class="code-block">
+# 导出题目
+judgelite.exe problem export 1 problem_1.json
+
+# 导入题目
+judgelite.exe import problem_1.json
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h4>Q: 沙箱有哪些安全限制？</h4>
+                <p>A: JudgeLite使用Windows Job Object实现沙箱，支持以下限制：</p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>时间限制（毫秒）</li>
+                    <li>内存限制（MB）</li>
+                    <li>最大进程数</li>
+                    <li>低完整性级别</li>
+                    <li>受限令牌</li>
+                </ul>
+            </div>
+
+            <h2>故障排除</h2>
+            
+            <h3>编译错误</h3>
+            <ol class="trouble-steps">
+                <li>
+                    <strong>错误: 找不到json.hpp</strong><br>
+                    确保 <code>json.hpp</code> 文件在 <code>include/</code> 目录下，或者在项目根目录。
+                </li>
+                <li>
+                    <strong>错误: 找不到Windows API函数</strong><br>
+                    确保链接了正确的库：<code>-lpsapi -luserenv -lole32</code>
+                </li>
+                <li>
+                    <strong>错误: C++17支持</strong><br>
+                    确保编译器支持C++17标准，使用 <code>-std=c++17</code> 选项。
+                </li>
+            </ol>
+
+            <h3>运行时错误</h3>
+            <ol class="trouble-steps">
+                <li>
+                    <strong>错误: 无法创建数据目录</strong><br>
+                    检查程序是否有写入权限，或者设置 <code>JUDGELITE_DATA_DIR</code> 到有权限的目录。
+                </li>
+                <li>
+                    <strong>错误: 沙箱执行失败</strong><br>
+                    确保以管理员身份运行，或者检查Windows安全设置。
+                </li>
+                <li>
+                    <strong>错误: 找不到编译器</strong><br>
+                    对于C/C++代码，确保g++或gcc在系统PATH中。
+                </li>
+            </ol>
+
+            <h2>联系我们</h2>
+            <div class="contact-grid">
+                <div class="contact-card">
+                    <h4>GitHub Issues</h4>
+                    <p>提交问题和建议</p>
+                    <a href="https://github.com" class="btn" style="margin-top: 15px;">提交Issue</a>
+                </div>
+                <div class="contact-card">
+                    <h4>邮件支持</h4>
+                    <p>support@judgelite.example.com</p>
+                    <a href="mailto:support@judgelite.example.com" class="btn btn-secondary" style="margin-top: 15px;">发送邮件</a>
+                </div>
+                <div class="contact-card">
+                    <h4>文档</h4>
+                    <p>查看完整文档</p>
+                    <a href="#" class="btn btn-secondary" style="margin-top: 15px;">查看文档</a>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 40px;">
+                <a href="index.html" class="btn">返回首页</a>
+            </div>
+        </div>
+
+        <footer>
+            <p>&copy; 2026 JudgeLite. All rights reserved.</p>
+        </footer>
+    </div>
+</body>
+</html>

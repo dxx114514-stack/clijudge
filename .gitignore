@@ -1,0 +1,31 @@
+# Build directories
+build/
+cmake-build-*/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data directory
+data/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Exported files
+export-example/
+*.zip
+
+# Original files
+problem.json
+sandbox_runner.cpp
+src/json.hpp

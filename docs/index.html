@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JudgeLite - 轻量级命令行在线评测系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            padding: 60px 20px;
+            color: white;
+        }
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        .main-content {
+            background: white;
+            border-radius: 10px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 40px;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin: 40px 0;
+        }
+        .feature-card {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 8px;
+            transition: transform 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+        .feature-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+        .feature-card p {
+            color: #666;
+        }
+        .command-tree {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 30px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .command-tree .keyword {
+            color: #569cd6;
+        }
+        .command-tree .string {
+            color: #ce9178;
+        }
+        .command-tree .comment {
+            color: #6a9955;
+        }
+        .btn {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 5px;
+            text-decoration: none;
+            margin: 10px;
+            transition: background 0.3s ease;
+        }
+        .btn:hover {
+            background: #5a6fd6;
+        }
+        .btn-secondary {
+            background: #6c757d;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        nav {
+            background: rgba(255,255,255,0.1);
+            padding: 15px 30px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 15px;
+            opacity: 0.9;
+        }
+        nav a:hover {
+            opacity: 1;
+        }
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: white;
+            opacity: 0.8;
+        }
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            .main-content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>JudgeLite</h1>
+            <p class="subtitle">轻量级命令行在线评测系统</p>
+        </header>
+
+        <nav>
+            <a href="index.html">首页</a>
+            <a href="support.html">技术支持</a>
+            <a href="https://github.com">GitHub</a>
+        </nav>
+
+        <div class="main-content">
+            <h2>功能特性</h2>
+            <div class="features">
+                <div class="feature-card">
+                    <h3>题目管理</h3>
+                    <p>创建、编辑、删除题目，支持导入导出JSON格式，方便题库管理。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>比赛管理</h3>
+                    <p>创建比赛，管理比赛题目，支持多人同时提交评测。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>安全沙箱</h3>
+                    <p>基于Windows Job Object的安全沙箱，支持时间限制、内存限制、进程数限制。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>多语言支持</h3>
+                    <p>支持C/C++、Python、Java、JavaScript等多种编程语言。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>JSON存储</h3>
+                    <p>使用JSON格式存储数据，方便备份、迁移和与其他系统集成。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>轻量级</h3>
+                    <p>纯命令行界面，无需复杂安装，开箱即用。</p>
+                </div>
+            </div>
+
+            <h2>子命令列表</h2>
+            <div class="command-tree">
+<span class="keyword">├─article</span>
+│  <span class="keyword">├─count</span>                          <span class="comment"># 统计文章数量</span>
+│  <span class="keyword">├─create</span> <span class="string">[标题] [md文件路径]</span>    <span class="comment"># 创建文章</span>
+│  <span class="keyword">├─delete</span> <span class="string">[编号]</span>                 <span class="comment"># 删除文章</span>
+│  <span class="keyword">├─list</span> <span class="string">[L编号=1] [R编号=50]</span>     <span class="comment"># 列出文章</span>
+│  <span class="keyword">└─view</span> <span class="string">[编号]</span>                   <span class="comment"># 查看文章</span>
+<span class="keyword">├─contest</span>
+│  <span class="keyword">├─create</span> <span class="string">[标题] [开始时间] [结束时间] [题目1] [题目2]</span>
+│  <span class="keyword">├─delete</span> <span class="string">[编号]</span>
+│  <span class="keyword">├─problem</span> <span class="string">[编号] [题目在比赛中的编号]</span>
+│  │  <span class="keyword">├─submit</span> <span class="string">[文件地址]</span>
+│  │  <span class="keyword">└─view</span>
+│  <span class="keyword">└─view</span> <span class="string">[编号]</span>
+<span class="keyword">├─ide</span>
+│  <span class="keyword">└─run</span> <span class="string">[代码路径] [in文件路径]</span>
+<span class="keyword">├─problem</span>
+│  <span class="keyword">├─count</span>
+│  <span class="keyword">├─create</span> <span class="string">[标题]</span>
+│  │  <span class="keyword">├─-background</span> <span class="string">[md路径]</span>       <span class="comment"># 从文件加载题目描述</span>
+│  │  <span class="keyword">├─-describe</span> <span class="string">[md路径]</span>         <span class="comment"># 从文件设置题目描述</span>
+│  │  <span class="keyword">├─-exampleio</span> <span class="string">[in路径] [out路径]</span> <span class="comment"># 从文件设置样例输入输出</span>
+│  │  <span class="keyword">├─-instyle</span> <span class="string">[md路径]</span>          <span class="comment"># 从文件设置输入格式说明</span>
+│  │  <span class="keyword">└─-outstyle</span> <span class="string">[md路径]</span>         <span class="comment"># 从文件设置输出格式说明</span>
+│  <span class="keyword">├─delete</span> <span class="string">[编号]</span>
+│  <span class="keyword">├─edit</span> <span class="string">[编号]</span>
+│  │  <span class="keyword">├─-title</span> <span class="string">[标题]</span>              <span class="comment"># 修改标题</span>
+│  │  <span class="keyword">├─-background</span> <span class="string">[md路径]</span>       <span class="comment"># 从文件加载题目描述</span>
+│  │  <span class="keyword">├─-describe</span> <span class="string">[md路径]</span>         <span class="comment"># 从文件设置题目描述</span>
+│  │  <span class="keyword">├─-exampleio</span> <span class="string">[in路径] [out路径]</span> <span class="comment"># 从文件设置样例输入输出</span>
+│  │  <span class="keyword">├─-instyle</span> <span class="string">[md路径]</span>          <span class="comment"># 从文件设置输入格式说明</span>
+│  │  <span class="keyword">└─-outstyle</span> <span class="string">[md路径]</span>         <span class="comment"># 从文件设置输出格式说明</span>
+│  <span class="keyword">├─export</span> <span class="string">[zip路径]</span>
+│  <span class="keyword">├─import</span> <span class="string">[zip路径]</span>
+│  <span class="keyword">├─list</span> <span class="string">[L=1] [R=50]</span>
+│  <span class="keyword">├─submit</span> <span class="string">[编号] [程序文件路径]</span>
+│  <span class="keyword">├─testdata</span> <span class="string">[题目编号]</span>
+│  │  <span class="keyword">├─-set-all</span>
+│  │  <span class="keyword">├─-zip</span> <span class="string">[zip路径]</span>
+│  │  <span class="keyword">├─create</span> <span class="string">[in] [out] [time] [mem] [pts]</span>
+│  │  <span class="keyword">├─delete</span> <span class="string">[编号]</span>
+│  │  <span class="keyword">└─list</span>
+│  <span class="keyword">└─view</span> <span class="string">[编号]</span>                   <span class="comment"># 查看题目（格式化显示题面）</span>
+<span class="keyword">└─submit</span>
+    <span class="keyword">├─count</span>
+    <span class="keyword">└─list</span> <span class="string">[L=1] [R=50]</span>
+            </div>
+
+            <h2>快速开始</h2>
+            <div class="command-tree">
+<span class="comment"># 编译项目</span>
+mkdir build
+cd build
+cmake ..
+cmake --build .
+
+<span class="comment"># 查看帮助</span>
+./judgelite.exe help
+
+<span class="comment"># 创建题目</span>
+./judgelite.exe problem create "A + B Problem"
+
+<span class="comment"># 查看题目</span>
+./judgelite.exe problem view 1
+
+<span class="comment"># 列出所有题目</span>
+./judgelite.exe problem list
+            </div>
+
+            <div style="text-align: center; margin-top: 40px;">
+                <a href="support.html" class="btn">获取技术支持</a>
+                <a href="https://github.com" class="btn btn-secondary">查看源码</a>
+            </div>
+        </div>
+
+        <footer>
+            <p>&copy; 2026 JudgeLite. All rights reserved.</p>
+        </footer>
+    </div>
+</body>
+</html>
