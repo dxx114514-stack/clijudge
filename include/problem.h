@@ -112,7 +112,16 @@ private:
         if (fs::exists(indexPath)) {
             std::ifstream f(indexPath);
             if (f.is_open()) {
-                f >> data;
+                // 检查文件是否为空
+                f.seekg(0, std::ios::end);
+                if (f.tellg() > 0) {
+                    f.seekg(0, std::ios::beg);
+                    try {
+                        f >> data;
+                    } catch (...) {
+                        data = json::array();
+                    }
+                }
             }
         }
         if (data.empty()) {
@@ -483,11 +492,28 @@ private:
 // 辅助函数：读取文件内容
 inline std::string readFileContent(const std::string& path) {
     if (path.empty()) return "";
-    std::ifstream f(path);
+    // 先检查文件是否存在
+    if (!fs::exists(path)) return "";
+    std::ifstream f(path, std::ios::binary);
     if (!f.is_open()) return "";
     std::stringstream ss;
     ss << f.rdbuf();
-    return ss.str();
+    std::string content = ss.str();
+    // 处理 UTF-8 BOM
+    if (content.size() >= 3 &&
+        (unsigned char)content[0] == 0xEF &&
+        (unsigned char)content[1] == 0xBB &&
+        (unsigned char)content[2] == 0xBF) {
+        content = content.substr(3);
+    }
+    // 处理 UTF-16 LE BOM
+    if (content.size() >= 2 &&
+        (unsigned char)content[0] == 0xFF &&
+        (unsigned char)content[1] == 0xFE) {
+        // 简单转换：跳过 BOM，按 UTF-8 处理后续字节
+        content = content.substr(2);
+    }
+    return content;
 }
 
 inline int cmdCount(const std::string& dataDir) {
@@ -776,8 +802,11 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
 
     TestCase tc;
     tc.id = nextId;
-    tc.inputData = inputData;
-    tc.outputData = outputData;
+    // 读取文件内容或使用内联内容
+    std::string inContent = readFileContent(inputData);
+    tc.inputData = inContent.empty() ? inputData : inContent;
+    std::string outContent = readFileContent(outputData);
+    tc.outputData = outContent.empty() ? outputData : outContent;
     tc.inputFile = "";
     tc.outputFile = "";
     tc.score = score;

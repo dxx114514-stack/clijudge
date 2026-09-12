@@ -53,7 +53,15 @@ private:
         if (fs::exists(indexPath)) {
             std::ifstream f(indexPath);
             if (f.is_open()) {
-                f >> data;
+                f.seekg(0, std::ios::end);
+                if (f.tellg() > 0) {
+                    f.seekg(0, std::ios::beg);
+                    try {
+                        f >> data;
+                    } catch (...) {
+                        data = json::array();
+                    }
+                }
             }
         }
         if (data.empty()) {
