@@ -78,32 +78,31 @@ std::string getDataDir() {
 
 // 显示帮助信息
 void showHelp() {
-    std::cout << "JudgeLite - Lightweight Command-Line Online Judge System\n" << std::endl;
-    std::cout << "Usage: judgelite.exe <command> [arguments...]\n" << std::endl;
-    std::cout << "Commands:\n" << std::endl;
+    std::cout << "JudgeLite - Lightweight Command-Line Online Judge System" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Usage: judgelite.exe <command> [arguments...]" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Commands:" << std::endl;
     std::cout << "  article   - Article management" << std::endl;
     std::cout << "  contest   - Contest management" << std::endl;
     std::cout << "  ide       - IDE functions" << std::endl;
     std::cout << "  problem   - Problem management" << std::endl;
-    std::cout << "  submit    - Submission management\n" << std::endl;
-    std::cout << "Quick Start:\n" << std::endl;
-    std::cout << "  judgelite.exe problem create \"A + B\"       Create a problem" << std::endl;
-    std::cout << "  judgelite.exe problem testdata 1 create in.txt out.txt 1000 256 100" << std::endl;
-    std::cout << "  judgelite.exe problem submit 1 solution.cpp  Submit solution\n" << std::endl;
+    std::cout << "  submit    - Submission management" << std::endl;
+    std::cout << std::endl;
     std::cout << "Use 'judgelite.exe <command> help' for more information about a command." << std::endl;
 }
 
 // 显示子命令帮助
 void showCommandHelp(const std::string& command) {
     if (command == "article") {
-        std::cout << "Article Commands:\n" << std::endl;
+        std::cout << "Article Commands:" << std::endl;
         std::cout << "  count                          Count articles" << std::endl;
         std::cout << "  create [title] [md_file]       Create article" << std::endl;
         std::cout << "  delete [id]                    Delete article" << std::endl;
         std::cout << "  list [L=1] [R=50]              List articles" << std::endl;
         std::cout << "  view [id]                      View article" << std::endl;
     } else if (command == "contest") {
-        std::cout << "Contest Commands:\n" << std::endl;
+        std::cout << "Contest Commands:" << std::endl;
         std::cout << "  create [title] [start] [end] [prob1] [prob2]  Create contest" << std::endl;
         std::cout << "  delete [id]                    Delete contest" << std::endl;
         std::cout << "  problem [id] [prob_index]      Contest problem" << std::endl;
@@ -111,10 +110,10 @@ void showCommandHelp(const std::string& command) {
         std::cout << "    view                         View submissions" << std::endl;
         std::cout << "  view [id]                      View contest" << std::endl;
     } else if (command == "ide") {
-        std::cout << "IDE Commands:\n" << std::endl;
+        std::cout << "IDE Commands:" << std::endl;
         std::cout << "  run [code] [input]             Run code" << std::endl;
     } else if (command == "problem") {
-        std::cout << "Problem Commands:\n" << std::endl;
+        std::cout << "Problem Commands:" << std::endl;
         std::cout << "  count                          Count problems" << std::endl;
         std::cout << "  create [title]                 Create problem" << std::endl;
         std::cout << "  delete [id]                    Delete problem" << std::endl;
@@ -127,13 +126,11 @@ void showCommandHelp(const std::string& command) {
         std::cout << "    -set-all                     Set all test data defaults" << std::endl;
         std::cout << "    -zip [zip_path]              Import test data from zip" << std::endl;
         std::cout << "    create [in] [out] [time] [mem] [pts]  Create test case" << std::endl;
-        std::cout << "      [in] is shorthand for [in path]" << std::endl;
-        std::cout << "      [out] is shorthand for [out path]" << std::endl;
         std::cout << "    delete [id]                  Delete test case" << std::endl;
         std::cout << "    list                         List test cases" << std::endl;
         std::cout << "  view [id]                      View problem" << std::endl;
     } else if (command == "submit") {
-        std::cout << "Submit Commands:\n" << std::endl;
+        std::cout << "Submit Commands:" << std::endl;
         std::cout << "  count                          Count submissions" << std::endl;
         std::cout << "  list [L=1] [R=50]              List submissions" << std::endl;
     } else {
