@@ -141,8 +141,14 @@ private:
     int getNextId() {
         int maxId = 0;
         for (const auto& item : data) {
+            // 检查顶层 id（旧格式）
             if (item.contains("id") && item["id"].get<int>() > maxId) {
                 maxId = item["id"].get<int>();
+            }
+            // 检查嵌套的 problem.id（NoldOJ格式）
+            if (item.contains("problem") && item["problem"].contains("id")) {
+                int pid = item["problem"]["id"].get<int>();
+                if (pid > maxId) maxId = pid;
             }
         }
         return maxId + 1;
@@ -453,14 +459,24 @@ public:
         return view(problemId);
     }
 
-    // 从JSON导入题目
+    // 从JSON导入题目（支持 NoldOJ 和 JudgeLite 格式）
     int importProblem(const json& problemData) {
         if (!problemData.contains("problem") || !problemData.contains("test_cases")) {
             return -1;
         }
 
         int id = getNextId();
-        json imported = problemData;
+        json imported;
+        
+        // 处理 NoldOJ 格式（带 version 字段）
+        if (problemData.contains("version")) {
+            imported["problem"] = problemData["problem"];
+            imported["test_cases"] = problemData["test_cases"];
+        } else {
+            // JudgeLite 旧格式
+            imported = problemData;
+        }
+        
         imported["problem"]["id"] = id;
 
         data.push_back(imported);
@@ -514,6 +530,16 @@ inline std::string readFileContent(const std::string& path) {
         content = content.substr(2);
     }
     return content;
+}
+
+// 获取ISO格式当前时间
+inline std::string getCurrentTimeISO() {
+    time_t now = time(nullptr);
+    struct tm timeinfo;
+    localtime_s(&timeinfo, &now);
+    char buf[64];
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &timeinfo);
+    return std::string(buf);
 }
 
 inline int cmdCount(const std::string& dataDir) {
@@ -854,7 +880,7 @@ inline int cmdTestDataSetAll(const std::string& dataDir, int problemId,
     }
 }
 
-inline int cmdExport(const std::string& dataDir, int problemId, const std::string& jsonPath) {
+inline int cmdExport(const std::string& dataDir, int problemId, const std::string& outputPath) {
     ProblemStore store(dataDir);
     json problem = store.exportProblem(problemId);
     if (problem.is_null()) {
@@ -862,15 +888,50 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
         return 1;
     }
 
-    // 移除id字段，导入时重新分配
-    json exportData = problem;
-    exportData["problem"].erase("id");
+    // 构建 NoldOJ 兼容的导出格式
+    json exportData;
+    exportData["version"] = 1;
+    exportData["exported_at"] = getCurrentTimeISO();
     
-    std::ofstream f(jsonPath);
+    // 移除id字段，导入时重新分配
+    json problemCopy = problem["problem"];
+    problemCopy.erase("id");
+    exportData["problem"] = problemCopy;
+    
+    // 处理测试用例
+    json testCases = json::array();
+    if (problem.contains("test_cases")) {
+        for (const auto& tc : problem["test_cases"]) {
+            json tcCopy = tc;
+            tcCopy.erase("id");
+            // 生成名称
+            int sortOrder = tcCopy.value("sort_order", 0);
+            tcCopy["name"] = "case_" + std::to_string(sortOrder);
+            testCases.push_back(tcCopy);
+        }
+    }
+    exportData["test_cases"] = testCases;
+
+    // 检测输出格式
+    bool isZip = false;
+    if (outputPath.size() >= 4) {
+        std::string ext = outputPath.substr(outputPath.size() - 4);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        isZip = (ext == ".zip");
+    }
+
+    if (isZip) {
+        // ZIP 格式导出（需要 miniz 库支持）
+        std::cerr << "ZIP export requires miniz library. Use .json format instead." << std::endl;
+        return 1;
+    }
+
+    // JSON 格式导出
+    std::ofstream f(outputPath);
     if (f.is_open()) {
         f << exportData.dump(2);
         f.close();
-        std::cout << "Problem exported to: " << jsonPath << std::endl;
+        std::cout << "Problem exported to: " << outputPath << std::endl;
         return 0;
     } else {
         std::cerr << "Failed to create export file." << std::endl;
@@ -878,13 +939,26 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
     }
 }
 
-inline int cmdImport(const std::string& dataDir, const std::string& jsonPath) {
-    if (!fs::exists(jsonPath)) {
-        std::cerr << "Import file not found: " << jsonPath << std::endl;
+inline int cmdImport(const std::string& dataDir, const std::string& importPath) {
+    if (!fs::exists(importPath)) {
+        std::cerr << "Import file not found: " << importPath << std::endl;
         return 1;
     }
 
-    std::ifstream f(jsonPath);
+    // 检测是否为 ZIP 文件
+    bool isZip = false;
+    if (importPath.size() >= 4) {
+        std::string ext = importPath.substr(importPath.size() - 4);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        isZip = (ext == ".zip");
+    }
+
+    if (isZip) {
+        std::cerr << "ZIP import requires miniz library. Use .json format instead." << std::endl;
+        return 1;
+    }
+
+    std::ifstream f(importPath);
     if (!f.is_open()) {
         std::cerr << "Failed to open import file." << std::endl;
         return 1;
@@ -899,13 +973,33 @@ inline int cmdImport(const std::string& dataDir, const std::string& jsonPath) {
         return 1;
     }
 
-    ProblemStore store(dataDir);
-    int id = store.importProblem(problemData);
-    if (id > 0) {
-        std::cout << "Problem imported with ID: " << id << std::endl;
-        return 0;
-    } else {
-        std::cerr << "Failed to import problem." << std::endl;
+    // 支持 NoldOJ 兼容格式（带 version 字段）
+    if (problemData.contains("version") && problemData.contains("problem")) {
+        // NoldOJ 格式
+        ProblemStore store(dataDir);
+        int id = store.importProblem(problemData);
+        if (id > 0) {
+            std::cout << "Problem imported with ID: " << id << std::endl;
+            return 0;
+        } else {
+            std::cerr << "Failed to import problem." << std::endl;
+            return 1;
+        }
+    }
+    // 支持旧格式（直接包含 problem 和 test_cases）
+    else if (problemData.contains("problem") && problemData.contains("test_cases")) {
+        ProblemStore store(dataDir);
+        int id = store.importProblem(problemData);
+        if (id > 0) {
+            std::cout << "Problem imported with ID: " << id << std::endl;
+            return 0;
+        } else {
+            std::cerr << "Failed to import problem." << std::endl;
+            return 1;
+        }
+    }
+    else {
+        std::cerr << "Invalid import format. Expected NoldOJ or JudgeLite format." << std::endl;
         return 1;
     }
 }
