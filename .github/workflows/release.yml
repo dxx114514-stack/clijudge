@@ -1,0 +1,79 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup MinGW
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
+      
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake .. -G "MinGW Makefiles"
+          cmake --build .
+      
+      - name: Check commit message
+        id: check
+        shell: bash
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          if [[ "$COMMIT_MSG" =~ ^build\ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            echo "version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Get changelog
+        if: steps.check.outputs.is_release == 'true'
+        id: changelog
+        shell: bash
+        run: |
+          VERSION="${{ steps.check.outputs.version }}"
+          
+          # Find last release tag
+          LAST_TAG=$(git tag -l "v*" --sort=-version:refname | head -n1)
+          
+          if [ -z "$LAST_TAG" ]; then
+            # No previous release, get all commits
+            CHANGELOG=$(git log --pretty=format:"- %s" HEAD)
+          else
+            # Get commits since last release
+            CHANGELOG=$(git log --pretty=format:"- %s" "$LAST_TAG"..HEAD)
+          fi
+          
+          # Write to file for multiline output
+          echo "$CHANGELOG" > changelog.txt
+          
+          # Set output
+          {
+            echo "changelog<<EOF"
+            cat changelog.txt
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        if: steps.check.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.check.outputs.version }}
+          name: v${{ steps.check.outputs.version }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: |
+            build/judgelite.exe
+          draft: false
+          prerelease: false
