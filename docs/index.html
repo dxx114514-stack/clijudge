@@ -218,6 +218,7 @@
 │  │  <span class="keyword">├─-set-all</span>
 │  │  <span class="keyword">├─-zip</span> <span class="string">[zip路径]</span>
 │  │  <span class="keyword">├─create</span> <span class="string">[in] [out] [time] [mem] [pts]</span>
+│  │  <span class="comment">│  [in] 等同于 [in路径]，[out] 等同于 [out路径]</span>
 │  │  <span class="keyword">├─delete</span> <span class="string">[编号]</span>
 │  │  <span class="keyword">└─list</span>
 │  <span class="keyword">└─view</span> <span class="string">[编号]</span>                   <span class="comment"># 查看题目（格式化显示题面）</span>
@@ -230,8 +231,11 @@
             <div class="command-tree">
 <span class="comment"># 编译项目</span>
 mkdir build
+
 cd build
+
 cmake ..
+
 cmake --build .
 
 <span class="comment"># 查看帮助</span>
