@@ -14,17 +14,15 @@ jobs:
         with:
           fetch-depth: 0
       
-      - name: Setup MinGW
-        uses: egor-tensin/setup-mingw@v2
-        with:
-          platform: x64
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1
       
       - name: Build
         run: |
           mkdir build
           cd build
-          cmake .. -G "MinGW Makefiles"
-          cmake --build .
+          cmake .. -G "Visual Studio 17 2022" -A x64
+          cmake --build . --config Release
       
       - name: Check commit message
         id: check
@@ -74,6 +72,6 @@ jobs:
           name: v${{ steps.check.outputs.version }}
           body: ${{ steps.changelog.outputs.changelog }}
           files: |
-            build/judgelite.exe
+            build/Release/judgelite.exe
           draft: false
           prerelease: false
