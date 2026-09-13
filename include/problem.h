@@ -774,7 +774,7 @@ inline int cmdSubmit(const std::string& dataDir, int problemId, const std::strin
     ProblemStore store(dataDir);
     auto submission = store.submit(problemId, filePath);
 
-    judgelite::submit::addSubmission(dataDir, problemId, "", filePath,
+    clijudge::submit::addSubmission(dataDir, problemId, "", filePath,
                                      submission.status, submission.score,
                                      submission.timeUsed, submission.memoryUsed,
                                      username);

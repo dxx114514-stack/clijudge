@@ -249,7 +249,7 @@ inline bool compareSpecialJudge(const std::string& spjExe,
     
     // 运行 SPJ
     std::string metaFile = workDir + "\\_meta.json";
-    auto result = judgelite::sandbox_run(
+    auto result = clijudge::sandbox_run(
         5000,   // 5秒超时
         256,    // 256MB 内存
         1,
@@ -358,7 +358,7 @@ inline TestCaseResult judgeTestCase(
     SetStdHandle(STD_OUTPUT_HANDLE, hStdoutWrite);
     SetStdHandle(STD_ERROR_HANDLE, hStderrWrite);
     
-    auto sandboxResult = judgelite::sandbox_run(
+    auto sandboxResult = clijudge::sandbox_run(
         timeLimitMs,
         memoryLimitMB,
         1,

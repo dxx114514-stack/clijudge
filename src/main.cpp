@@ -188,7 +188,7 @@ int main(int argc, char* argv[]) {
             showCommandHelp("article");
             return 0;
         } else if (subCmd == "count") {
-            return judgelite::article::cmdCount(dataDir);
+            return clijudge::article::cmdCount(dataDir);
         } else if (subCmd == "create") {
             if (argc < 4) {
                 std::cerr << "Usage: judgelite.exe article create [title] [md_file]" << std::endl;
@@ -196,25 +196,25 @@ int main(int argc, char* argv[]) {
             }
             std::string title = argv[3];
             std::string mdFile = (argc >= 5) ? argv[4] : "";
-            return judgelite::article::cmdCreate(dataDir, title, mdFile);
+            return clijudge::article::cmdCreate(dataDir, title, mdFile);
         } else if (subCmd == "delete") {
             if (argc < 4) {
                 std::cerr << "Usage: judgelite.exe article delete [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::article::cmdDelete(dataDir, id);
+            return clijudge::article::cmdDelete(dataDir, id);
         } else if (subCmd == "list") {
             int L = (argc >= 4) ? parseInt(argv[3], 1) : 1;
             int R = (argc >= 5) ? parseInt(argv[4], 50) : 50;
-            return judgelite::article::cmdList(dataDir, L, R);
+            return clijudge::article::cmdList(dataDir, L, R);
         } else if (subCmd == "view") {
             if (argc < 4) {
                 std::cerr << "Usage: judgelite.exe article view [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::article::cmdView(dataDir, id);
+            return clijudge::article::cmdView(dataDir, id);
         } else {
             std::cerr << "Unknown article command: " << subCmd << std::endl;
             showCommandHelp("article");
@@ -337,7 +337,7 @@ int main(int argc, char* argv[]) {
             }
             std::string codePath = argv[3];
             std::string inputPath = (argc >= 5) ? argv[4] : "";
-            return judgelite::ide::cmdRun(codePath, inputPath);
+            return clijudge::ide::cmdRun(codePath, inputPath);
         } else {
             std::cerr << "Unknown ide command: " << subCmd << std::endl;
             showCommandHelp("ide");
@@ -561,11 +561,11 @@ int main(int argc, char* argv[]) {
             showCommandHelp("submit");
             return 0;
         } else if (subCmd == "count") {
-            return judgelite::submit::cmdCount(dataDir);
+            return clijudge::submit::cmdCount(dataDir);
         } else if (subCmd == "list") {
             int L = (argc >= 4) ? parseInt(argv[3], 1) : 1;
             int R = (argc >= 5) ? parseInt(argv[4], 50) : 50;
-            return judgelite::submit::cmdList(dataDir, L, R);
+            return clijudge::submit::cmdList(dataDir, L, R);
         } else {
             std::cerr << "Unknown submit command: " << subCmd << std::endl;
             showCommandHelp("submit");
