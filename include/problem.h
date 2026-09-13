@@ -33,6 +33,7 @@
 #include "json.hpp"
 #include "sandbox_runner.hpp"
 #include "submit.h"
+#include "judge.h"
 
 namespace judgelite {
 namespace problem {
@@ -298,7 +299,7 @@ public:
         return result;
     }
 
-    // 提交题目
+    // 提交题目（使用 judge 模块评判）
     Submission submit(int problemId, const std::string& filePath) {
         Submission sub;
         sub.id = 0;
@@ -323,48 +324,14 @@ public:
             return sub;
         }
 
-        // 获取题目配置
-        int timeLimit = problem["problem"].value("time_limit", 1000);
-        int memoryLimit = problem["problem"].value("memory_limit", 256);
+        // 使用 judge 模块评判
+        auto judgeResult = clijudge::judge::judgeSubmission(problem, filePath);
 
-        // 创建临时工作目录
-        char tempPath[MAX_PATH];
-        GetTempPathA(MAX_PATH, tempPath);
-        std::string workDir = std::string(tempPath) + "judgelite_submit_" + std::to_string(problemId);
-        fs::create_directories(workDir);
-
-        std::string metaFile = workDir + "\\_meta.json";
-
-        // 使用沙箱运行
-        auto result = judgelite::sandbox_run(
-            timeLimit,
-            memoryLimit,
-            1,
-            metaFile.c_str(),
-            filePath.c_str(),
-            {},
-            false
-        );
-
-        // 读取元数据
-        if (fs::exists(metaFile)) {
-            std::ifstream f(metaFile);
-            if (f.is_open()) {
-                json meta;
-                f >> meta;
-                sub.timeUsed = meta.value("time_used", 0);
-                sub.memoryUsed = meta.value("memory_used", 0);
-                sub.status = meta.value("signal", "null");
-                if (sub.status == "null") {
-                    sub.status = (meta.value("exit_code", 0) == 0) ? "accepted" : "runtime_error";
-                }
-            }
-        }
-
-        // 清理临时目录
-        try {
-            fs::remove_all(workDir);
-        } catch (...) {}
+        // 转换结果
+        sub.status = clijudge::judge::statusToAbbr(judgeResult.status);
+        sub.score = judgeResult.totalScore;
+        sub.timeUsed = judgeResult.totalTimeMs;
+        sub.memoryUsed = judgeResult.maxMemoryKB;
 
         return sub;
     }
@@ -812,13 +779,14 @@ inline int cmdSubmit(const std::string& dataDir, int problemId, const std::strin
                                      submission.timeUsed, submission.memoryUsed,
                                      username);
 
-    std::cout << "Submission Result:" << std::endl;
-    std::cout << "  Status: " << submission.status << std::endl;
-    std::cout << "  Time: " << submission.timeUsed << " ms" << std::endl;
-    std::cout << "  Memory: " << submission.memoryUsed << " KB" << std::endl;
-    std::cout << "  User: " << (username.empty() ? "unknown" : username) << std::endl;
+    std::cout << "=== Submission Result ===" << std::endl;
+    std::cout << "Status: " << submission.status << std::endl;
+    std::cout << "Score: " << submission.score << std::endl;
+    std::cout << "Time: " << submission.timeUsed << " ms" << std::endl;
+    std::cout << "Memory: " << submission.memoryUsed << " KB" << std::endl;
+    std::cout << "User: " << (username.empty() ? "unknown" : username) << std::endl;
 
-    return (submission.status == "accepted") ? 0 : 1;
+    return (submission.status == "AC") ? 0 : 1;
 }
 
 inline int cmdTestDataList(const std::string& dataDir, int problemId) {
