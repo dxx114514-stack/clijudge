@@ -1,5 +1,3 @@
 *.exe
 data/
 test_export.cdf
-*.cpp
-*.txt
