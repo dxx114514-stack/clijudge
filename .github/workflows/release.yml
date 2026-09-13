@@ -25,8 +25,9 @@ jobs:
       - name: Check commit message
         id: check
         shell: bash
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
           if [[ "$COMMIT_MSG" =~ ^build\ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             echo "version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
             echo "is_release=true" >> $GITHUB_OUTPUT
