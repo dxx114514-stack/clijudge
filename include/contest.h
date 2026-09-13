@@ -14,10 +14,12 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <filesystem>
+#include <algorithm>
 #include "json.hpp"
 
 namespace judgelite {
@@ -187,7 +189,8 @@ public:
     }
 
     // 提交比赛题目
-    bool submitProblem(int contestId, int problemIndex, const std::string& filePath) {
+    bool submitProblem(int contestId, int problemIndex, const std::string& filePath,
+                       const std::string& username = "") {
         int problemId = getContestProblemId(contestId, problemIndex);
         if (problemId < 0) return false;
 
@@ -198,7 +201,8 @@ public:
             {"problem_id", problemId},
             {"file_path", filePath},
             {"submitted_at", getCurrentTime()},
-            {"result", "pending"}
+            {"result", "pending"},
+            {"username", username.empty() ? "unknown" : username}
         };
 
         ensureDataDir();
@@ -241,6 +245,53 @@ public:
     // 列出所有比赛
     json list() {
         return data;
+    }
+
+    // 获取比赛排行榜
+    json leaderboard(int contestId) {
+        json contest = view(contestId);
+        if (contest.is_null()) return nullptr;
+
+        json rankings = json::array();
+
+        if (contest.contains("problem_ids")) {
+            const auto& problemIds = contest["problem_ids"];
+            int numProblems = (int)problemIds.size();
+
+            // 收集所有提交
+            std::map<std::string, json> userStats;
+            for (int i = 1; i <= numProblems; i++) {
+                json submissions = viewProblemSubmissions(contestId, i);
+                if (!submissions.is_array()) continue;
+                for (const auto& sub : submissions) {
+                    std::string user = sub.value("username", "unknown");
+                    if (userStats.find(user) == userStats.end()) {
+                        userStats[user] = {
+                            {"username", user},
+                            {"score", 0},
+                            {"accepted", 0},
+                            {"total", 0}
+                        };
+                    }
+                    userStats[user]["total"] = userStats[user]["total"].get<int>() + 1;
+                    if (sub.value("result", "") == "accepted") {
+                        userStats[user]["score"] = userStats[user]["score"].get<int>() + 1;
+                        userStats[user]["accepted"] = userStats[user]["accepted"].get<int>() + 1;
+                    }
+                }
+            }
+
+            // 转为数组并排序
+            for (auto& [key, val] : userStats) {
+                rankings.push_back(val);
+            }
+            std::sort(rankings.begin(), rankings.end(),
+                [](const json& a, const json& b) {
+                    return a["score"].get<int>() > b["score"].get<int>();
+                });
+        }
+
+        return rankings;
     }
 
 private:
@@ -287,11 +338,13 @@ inline int cmdView(const std::string& dataDir, int id) {
 }
 
 inline int cmdProblemSubmit(const std::string& dataDir, int contestId,
-                            int problemIndex, const std::string& filePath) {
+                            int problemIndex, const std::string& filePath,
+                            const std::string& username = "") {
     ContestStore store(dataDir);
-    if (store.submitProblem(contestId, problemIndex, filePath)) {
+    if (store.submitProblem(contestId, problemIndex, filePath, username)) {
         std::cout << "Submission accepted for contest " << contestId
                   << " problem " << problemIndex << std::endl;
+        std::cout << "  User: " << (username.empty() ? "unknown" : username) << std::endl;
         return 0;
     } else {
         std::cerr << "Failed to submit: invalid contest or problem index." << std::endl;
@@ -310,6 +363,17 @@ inline int cmdList(const std::string& dataDir) {
     ContestStore store(dataDir);
     json contests = store.list();
     std::cout << contests.dump(2) << std::endl;
+    return 0;
+}
+
+inline int cmdLeaderboard(const std::string& dataDir, int contestId) {
+    ContestStore store(dataDir);
+    json board = store.leaderboard(contestId);
+    if (board.is_null()) {
+        std::cerr << "Contest " << contestId << " not found." << std::endl;
+        return 1;
+    }
+    std::cout << board.dump(2) << std::endl;
     return 0;
 }
 

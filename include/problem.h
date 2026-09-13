@@ -32,6 +32,7 @@
 #include <cstring>
 #include "json.hpp"
 #include "sandbox_runner.hpp"
+#include "submit.h"
 
 namespace judgelite {
 namespace problem {
@@ -89,6 +90,7 @@ struct Submission {
     int score;
     int timeUsed;
     int memoryUsed;
+    std::string username;
 };
 
 // 数据存储类
@@ -800,14 +802,21 @@ inline int cmdList(const std::string& dataDir, int left = 1, int right = 50) {
     return 0;
 }
 
-inline int cmdSubmit(const std::string& dataDir, int problemId, const std::string& filePath) {
+inline int cmdSubmit(const std::string& dataDir, int problemId, const std::string& filePath,
+                     const std::string& username = "") {
     ProblemStore store(dataDir);
     auto submission = store.submit(problemId, filePath);
+
+    judgelite::submit::addSubmission(dataDir, problemId, "", filePath,
+                                     submission.status, submission.score,
+                                     submission.timeUsed, submission.memoryUsed,
+                                     username);
 
     std::cout << "Submission Result:" << std::endl;
     std::cout << "  Status: " << submission.status << std::endl;
     std::cout << "  Time: " << submission.timeUsed << " ms" << std::endl;
     std::cout << "  Memory: " << submission.memoryUsed << " KB" << std::endl;
+    std::cout << "  User: " << (username.empty() ? "unknown" : username) << std::endl;
 
     return (submission.status == "accepted") ? 0 : 1;
 }

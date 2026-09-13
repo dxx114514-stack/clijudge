@@ -105,8 +105,9 @@ void showCommandHelp(const std::string& command) {
         std::cout << "Contest Commands:" << std::endl;
         std::cout << "  create [title] [start] [end] [prob1] [prob2]  Create contest" << std::endl;
         std::cout << "  delete [id]                    Delete contest" << std::endl;
+        std::cout << "  leaderboard [id]               View contest leaderboard" << std::endl;
         std::cout << "  problem [id] [prob_index]      Contest problem" << std::endl;
-        std::cout << "    submit [file]                Submit solution" << std::endl;
+        std::cout << "    submit [file] [--as user]    Submit solution" << std::endl;
         std::cout << "    view                         View submissions" << std::endl;
         std::cout << "  view [id]                      View contest" << std::endl;
     } else if (command == "ide") {
@@ -121,7 +122,7 @@ void showCommandHelp(const std::string& command) {
         std::cout << "  export [zip_path]              Export problem" << std::endl;
         std::cout << "  import [zip_path]              Import problem" << std::endl;
         std::cout << "  list [L=1] [R=50]              List problems" << std::endl;
-        std::cout << "  submit [id] [file]             Submit solution" << std::endl;
+        std::cout << "  submit [id] [file] [--as user] Submit solution" << std::endl;
         std::cout << "  testdata [id]                  Test data management" << std::endl;
         std::cout << "    -set-all                     Set all test data defaults" << std::endl;
         std::cout << "    -zip [zip_path]              Import test data from zip" << std::endl;
@@ -261,11 +262,17 @@ int main(int argc, char* argv[]) {
                 std::string action = argv[5];
                 if (action == "submit") {
                     if (argc < 7) {
-                        std::cerr << "Usage: judgelite.exe contest problem [id] [prob_index] submit [file]" << std::endl;
+                        std::cerr << "Usage: judgelite.exe contest problem [id] [prob_index] submit [file] [--as username]" << std::endl;
                         return 1;
                     }
                     std::string filePath = argv[6];
-                    return judgelite::contest::cmdProblemSubmit(dataDir, contestId, probIndex, filePath);
+                    std::string username;
+                    for (int i = 7; i < argc; i++) {
+                        if (strcmp(argv[i], "--as") == 0 && i + 1 < argc) {
+                            username = argv[++i];
+                        }
+                    }
+                    return judgelite::contest::cmdProblemSubmit(dataDir, contestId, probIndex, filePath, username);
                 } else if (action == "view") {
                     return judgelite::contest::cmdProblemView(dataDir, contestId, probIndex);
                 }
@@ -281,6 +288,13 @@ int main(int argc, char* argv[]) {
             return judgelite::contest::cmdView(dataDir, id);
         } else if (subCmd == "list") {
             return judgelite::contest::cmdList(dataDir);
+        } else if (subCmd == "leaderboard") {
+            if (argc < 4) {
+                std::cerr << "Usage: judgelite.exe contest leaderboard [id]" << std::endl;
+                return 1;
+            }
+            int id = parseInt(argv[3]);
+            return judgelite::contest::cmdLeaderboard(dataDir, id);
         } else {
             std::cerr << "Unknown contest command: " << subCmd << std::endl;
             showCommandHelp("contest");
@@ -429,12 +443,18 @@ int main(int argc, char* argv[]) {
             return judgelite::problem::cmdList(dataDir, L, R);
         } else if (subCmd == "submit") {
             if (argc < 5) {
-                std::cerr << "Usage: judgelite.exe problem submit [id] [file]" << std::endl;
+                std::cerr << "Usage: judgelite.exe problem submit [id] [file] [--as username]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
             std::string filePath = argv[4];
-            return judgelite::problem::cmdSubmit(dataDir, id, filePath);
+            std::string username;
+            for (int i = 5; i < argc; i++) {
+                if (strcmp(argv[i], "--as") == 0 && i + 1 < argc) {
+                    username = argv[++i];
+                }
+            }
+            return judgelite::problem::cmdSubmit(dataDir, id, filePath, username);
         } else if (subCmd == "export") {
             if (argc < 5) {
                 std::cerr << "Usage: judgelite.exe problem export [id] [zip_path]" << std::endl;

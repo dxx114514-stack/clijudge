@@ -34,6 +34,7 @@ struct Submission {
     int score;
     int timeUsed;
     int memoryUsed;
+    std::string username;
 };
 
 // 数据存储类
@@ -106,7 +107,8 @@ public:
             {"status", sub.status},
             {"score", sub.score},
             {"time_used", sub.timeUsed},
-            {"memory_used", sub.memoryUsed}
+            {"memory_used", sub.memoryUsed},
+            {"username", sub.username.empty() ? "unknown" : sub.username}
         };
 
         data.push_back(submission);
@@ -193,7 +195,8 @@ inline std::string getCurrentTime() {
 // 辅助函数：添加提交记录（供其他模块调用）
 inline int addSubmission(const std::string& dataDir, int problemId, const std::string& problemTitle,
                          const std::string& filePath, const std::string& status,
-                         int score = 0, int timeUsed = 0, int memoryUsed = 0) {
+                         int score = 0, int timeUsed = 0, int memoryUsed = 0,
+                         const std::string& username = "") {
     SubmitStore store(dataDir);
 
     Submission sub;
@@ -205,6 +208,7 @@ inline int addSubmission(const std::string& dataDir, int problemId, const std::s
     sub.score = score;
     sub.timeUsed = timeUsed;
     sub.memoryUsed = memoryUsed;
+    sub.username = username;
 
     return store.addSubmission(sub);
 }
