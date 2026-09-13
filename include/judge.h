@@ -23,6 +23,7 @@
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
+#include <map>
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -157,6 +158,20 @@ inline bool compareTextLine(const std::string& expected, const std::string& actu
         
         if (trimLineEnd(eLine) != trimLineEnd(aLine)) return false;
     }
+}
+
+// 忽略空格比较
+inline bool compareTextNoSpace(const std::string& expected, const std::string& actual) {
+    auto removeSpaces = [](const std::string& s) {
+        std::string result;
+        for (char c : s) {
+            if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+                result += c;
+            }
+        }
+        return result;
+    };
+    return removeSpaces(expected) == removeSpaces(actual);
 }
 
 // 实数比较（绝对误差）
@@ -436,6 +451,8 @@ inline TestCaseResult judgeTestCase(
                     accepted = compareTextStrict(expectedOutput, actualOutput);
                 } else if (compareMode == "text_line") {
                     accepted = compareTextLine(expectedOutput, actualOutput);
+                } else if (compareMode == "text_no_space") {
+                    accepted = compareTextNoSpace(expectedOutput, actualOutput);
                 } else if (compareMode == "float_abs") {
                     accepted = compareFloatAbs(expectedOutput, actualOutput, floatAbsTol);
                 } else if (compareMode == "float_rel") {
@@ -504,51 +521,58 @@ inline JudgeResult judgeSubmission(
     int defaultTimeLimit = problem["problem"].value("time_limit", 1000);
     int defaultMemoryLimit = problem["problem"].value("memory_limit", 256);
     
-    // 评判每个测试点
-    SubtaskResult currentSubtask;
-    currentSubtask.id = 1;
-    currentSubtask.score = 0;
-    currentSubtask.maxScore = 0;
-    currentSubtask.status = JudgeStatus::ACCEPTED;
-    
+    // 按 subtask_id 分组
+    std::map<int, std::vector<json>> subtaskGroups;
     for (const auto& tc : sortedCases) {
-        int tcId = tc.value("id", 0);
-        int tcScore = tc.value("score", 10);
-        int tcTimeLimit = tc.value("time_limit", -1);
-        int tcMemoryLimit = tc.value("memory_limit", -1);
-        
-        // 使用测试点特定的时限和内存，如果没有则使用题目默认值
-        int timeLimit = (tcTimeLimit > 0) ? tcTimeLimit : defaultTimeLimit;
-        int memoryLimit = (tcMemoryLimit > 0) ? tcMemoryLimit : defaultMemoryLimit;
-        
-        std::string inputData = tc.value("input_data", "");
-        std::string expectedOutput = tc.value("output_data", "");
-        
-        TestCaseResult tcResult = judgeTestCase(
-            tcId, tcScore, inputData, expectedOutput, exePath,
-            timeLimit, memoryLimit, mode, absTol, relTol, spj
-        );
-        
-        currentSubtask.testCases.push_back(tcResult);
-        currentSubtask.maxScore += tcScore;
-        result.maxScore += tcScore;
-        
-        if (tcResult.status == JudgeStatus::ACCEPTED) {
-            currentSubtask.score += tcResult.score;
-            result.totalScore += tcResult.score;
-        } else {
-            // 某个测试点失败，整个子任务失败
-            currentSubtask.status = tcResult.status;
-            result.status = tcResult.status;
-        }
-        
-        result.totalTimeMs += tcResult.timeUsedMs;
-        if (tcResult.memoryUsedKB > result.maxMemoryKB) {
-            result.maxMemoryKB = tcResult.memoryUsedKB;
-        }
+        int subtaskId = tc.value("subtask_id", 1);
+        subtaskGroups[subtaskId].push_back(tc);
     }
     
-    result.subtasks.push_back(currentSubtask);
+    // 评判每个子任务
+    for (auto& [subtaskId, cases] : subtaskGroups) {
+        SubtaskResult st;
+        st.id = subtaskId;
+        st.score = 0;
+        st.maxScore = 0;
+        st.status = JudgeStatus::ACCEPTED;
+        
+        for (const auto& tc : cases) {
+            int tcId = tc.value("id", 0);
+            int tcScore = tc.value("score", 10);
+            int tcTimeLimit = tc.value("time_limit", -1);
+            int tcMemoryLimit = tc.value("memory_limit", -1);
+            
+            int timeLimit = (tcTimeLimit > 0) ? tcTimeLimit : defaultTimeLimit;
+            int memoryLimit = (tcMemoryLimit > 0) ? tcMemoryLimit : defaultMemoryLimit;
+            
+            std::string inputData = tc.value("input_data", "");
+            std::string expectedOutput = tc.value("output_data", "");
+            
+            TestCaseResult tcResult = judgeTestCase(
+                tcId, tcScore, inputData, expectedOutput, exePath,
+                timeLimit, memoryLimit, mode, absTol, relTol, spj
+            );
+            
+            st.testCases.push_back(tcResult);
+            st.maxScore += tcScore;
+            result.maxScore += tcScore;
+            
+            if (tcResult.status == JudgeStatus::ACCEPTED) {
+                st.score += tcResult.score;
+                result.totalScore += tcResult.score;
+            } else {
+                st.status = tcResult.status;
+                result.status = tcResult.status;
+            }
+            
+            result.totalTimeMs += tcResult.timeUsedMs;
+            if (tcResult.memoryUsedKB > result.maxMemoryKB) {
+                result.maxMemoryKB = tcResult.memoryUsedKB;
+            }
+        }
+        
+        result.subtasks.push_back(st);
+    }
     
     return result;
 }

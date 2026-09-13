@@ -52,6 +52,7 @@ struct TestCase {
     int timeLimit;      // null表示使用题目默认值
     int memoryLimit;    // null表示使用题目默认值
     int sortOrder;
+    int subtaskId;      // 子任务编号
 };
 
 // 题目数据结构
@@ -356,7 +357,8 @@ public:
                     {"score", tc.score},
                     {"time_limit", tc.timeLimit},
                     {"memory_limit", tc.memoryLimit},
-                    {"sort_order", tc.sortOrder}
+                    {"sort_order", tc.sortOrder},
+                    {"subtask_id", tc.subtaskId}
                 };
 
                 item["test_cases"].push_back(testCase);
@@ -824,6 +826,7 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     tc.timeLimit = timeLimit;
     tc.memoryLimit = memoryLimit;
     tc.sortOrder = nextId;
+    tc.subtaskId = 1;  // 默认子任务为1
 
     if (store.addTestCase(problemId, tc)) {
         std::cout << "Test case created with ID: " << tc.id << std::endl;

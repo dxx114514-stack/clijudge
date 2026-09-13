@@ -351,6 +351,13 @@ public:
                 }
                 tcJson["output_data"] = outputData;
 
+                // 存储子任务依赖信息
+                if (!tc.dependenceSubtask.empty()) {
+                    tcJson["subtask_id"] = tc.dependenceSubtask[0];
+                } else {
+                    tcJson["subtask_id"] = (int)i + 1;
+                }
+
                 testCases.push_back(tcJson);
             }
             problemJson["test_cases"] = testCases;
