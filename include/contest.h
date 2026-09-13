@@ -196,6 +196,30 @@ public:
         int problemId = getContestProblemId(contestId, problemIndex);
         if (problemId < 0) return false;
 
+        // 加载题目数据进行评判
+        std::string problemPath = dataDir + "/problem_" + std::to_string(problemId) + ".json";
+        json problemData;
+        if (fs::exists(problemPath)) {
+            std::ifstream pf(problemPath);
+            if (pf.is_open()) {
+                pf >> problemData;
+            }
+        }
+        
+        // 评判
+        std::string result = "pending";
+        int score = 0;
+        int timeUsed = 0;
+        int memoryUsed = 0;
+        
+        if (!problemData.is_null() && fs::exists(filePath)) {
+            auto judgeResult = clijudge::judge::judgeSubmission(problemData, filePath);
+            result = clijudge::judge::statusToAbbr(judgeResult.status);
+            score = judgeResult.totalScore;
+            timeUsed = judgeResult.totalTimeMs;
+            memoryUsed = judgeResult.maxMemoryKB;
+        }
+
         // 保存提交记录
         json submission = {
             {"contest_id", contestId},
@@ -203,7 +227,10 @@ public:
             {"problem_id", problemId},
             {"file_path", filePath},
             {"submitted_at", getCurrentTime()},
-            {"result", "pending"},
+            {"result", result},
+            {"score", score},
+            {"time_used", timeUsed},
+            {"memory_used", memoryUsed},
             {"username", username.empty() ? "unknown" : username}
         };
 
@@ -445,9 +472,13 @@ public:
                         };
                     }
                     userStats[user]["total"] = userStats[user]["total"].get<int>() + 1;
-                    if (sub.value("result", "") == "accepted") {
-                        userStats[user]["score"] = userStats[user]["score"].get<int>() + 1;
+                    std::string result = sub.value("result", "");
+                    int score = sub.value("score", 0);
+                    if (result == "AC" || result == "accepted") {
+                        userStats[user]["score"] = userStats[user]["score"].get<int>() + score;
                         userStats[user]["accepted"] = userStats[user]["accepted"].get<int>() + 1;
+                    } else {
+                        userStats[user]["score"] = userStats[user]["score"].get<int>() + score;
                     }
                 }
             }
