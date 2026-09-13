@@ -111,8 +111,9 @@ void showCommandHelp(const std::string& command) {
         std::cout << "比赛命令:" << std::endl;
         std::cout << "  create [标题] [开始时间] [结束时间] [题目1] [题目2]  创建比赛" << std::endl;
         std::cout << "  delete [编号]                  删除比赛" << std::endl;
+        std::cout << "  leaderboard [编号]             查看排行榜" << std::endl;
         std::cout << "  problem [编号] [题目索引]       比赛题目" << std::endl;
-        std::cout << "    submit [文件]                提交解答" << std::endl;
+        std::cout << "    submit [文件] [--as 用户名]   提交解答" << std::endl;
         std::cout << "    view                         查看提交" << std::endl;
         std::cout << "  view [编号]                    查看比赛" << std::endl;
     } else if (command == "ide") {
@@ -127,7 +128,7 @@ void showCommandHelp(const std::string& command) {
         std::cout << "  export [zip路径]               导出题目" << std::endl;
         std::cout << "  import [zip路径]               导入题目" << std::endl;
         std::cout << "  list [L=1] [R=50]              列出题目" << std::endl;
-        std::cout << "  submit [编号] [文件]           提交解答" << std::endl;
+        std::cout << "  submit [编号] [文件] [--as 用户名]  提交解答" << std::endl;
         std::cout << "  testdata [编号]                测试数据管理" << std::endl;
         std::cout << "    -set-all                     设置所有测试数据默认值" << std::endl;
         std::cout << "    -zip [zip路径]               从zip导入测试数据" << std::endl;
@@ -267,11 +268,17 @@ int main(int argc, char* argv[]) {
                 std::string action = argv[5];
                 if (action == "submit") {
                     if (argc < 7) {
-                        std::cerr << "用法: judgelite.exe contest problem [编号] [题目索引] submit [文件]" << std::endl;
+                        std::cerr << "用法: judgelite.exe contest problem [编号] [题目索引] submit [文件] [--as 用户名]" << std::endl;
                         return 1;
                     }
                     std::string filePath = argv[6];
-                    return judgelite::contest::cmdProblemSubmit(dataDir, contestId, probIndex, filePath);
+                    std::string username;
+                    for (int i = 7; i < argc; i++) {
+                        if (strcmp(argv[i], "--as") == 0 && i + 1 < argc) {
+                            username = argv[++i];
+                        }
+                    }
+                    return judgelite::contest::cmdProblemSubmit(dataDir, contestId, probIndex, filePath, username);
                 } else if (action == "view") {
                     return judgelite::contest::cmdProblemView(dataDir, contestId, probIndex);
                 }
@@ -287,6 +294,13 @@ int main(int argc, char* argv[]) {
             return judgelite::contest::cmdView(dataDir, id);
         } else if (subCmd == "list") {
             return judgelite::contest::cmdList(dataDir);
+        } else if (subCmd == "leaderboard") {
+            if (argc < 4) {
+                std::cerr << "用法: judgelite.exe contest leaderboard [编号]" << std::endl;
+                return 1;
+            }
+            int id = parseInt(argv[3]);
+            return judgelite::contest::cmdLeaderboard(dataDir, id);
         } else {
             std::cerr << "未知的比赛命令: " << subCmd << std::endl;
             showCommandHelp("contest");
@@ -435,12 +449,18 @@ int main(int argc, char* argv[]) {
             return judgelite::problem::cmdList(dataDir, L, R);
         } else if (subCmd == "submit") {
             if (argc < 5) {
-                std::cerr << "用法: judgelite.exe problem submit [编号] [文件]" << std::endl;
+                std::cerr << "用法: judgelite.exe problem submit [编号] [文件] [--as 用户名]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
             std::string filePath = argv[4];
-            return judgelite::problem::cmdSubmit(dataDir, id, filePath);
+            std::string username;
+            for (int i = 5; i < argc; i++) {
+                if (strcmp(argv[i], "--as") == 0 && i + 1 < argc) {
+                    username = argv[++i];
+                }
+            }
+            return judgelite::problem::cmdSubmit(dataDir, id, filePath, username);
         } else if (subCmd == "export") {
             if (argc < 5) {
                 std::cerr << "用法: judgelite.exe problem export [编号] [zip路径]" << std::endl;
