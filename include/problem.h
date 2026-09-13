@@ -1,8 +1,8 @@
-#ifndef JUDGELITE_PROBLEM_H
-#define JUDGELITE_PROBLEM_H
+#ifndef CLIJUDGE_PROBLEM_H
+#define CLIJUDGE_PROBLEM_H
 
 // problem.h
-// JudgeLite 题目管理子命令
+// CLIJudge 题目管理子命令
 //
 // 子命令:
 //   count - 统计题目数量
@@ -34,7 +34,7 @@
 #include "sandbox_runner.hpp"
 #include "submit.h"
 
-namespace judgelite {
+namespace clijudge {
 namespace problem {
 
 using json = nlohmann::json;
@@ -330,13 +330,13 @@ public:
         // 创建临时工作目录
         char tempPath[MAX_PATH];
         GetTempPathA(MAX_PATH, tempPath);
-        std::string workDir = std::string(tempPath) + "judgelite_submit_" + std::to_string(problemId);
+        std::string workDir = std::string(tempPath) + "clijudge_submit_" + std::to_string(problemId);
         fs::create_directories(workDir);
 
         std::string metaFile = workDir + "\\_meta.json";
 
         // 使用沙箱运行
-        auto result = judgelite::sandbox_run(
+        auto result = clijudge::sandbox_run(
             timeLimit,
             memoryLimit,
             1,
@@ -461,7 +461,7 @@ public:
         return view(problemId);
     }
 
-    // 从JSON导入题目（支持 NoldOJ 和 JudgeLite 格式）
+    // 从JSON导入题目（支持 NoldOJ 和 CLIJudge 格式）
     int importProblem(const json& problemData) {
         if (!problemData.contains("problem") || !problemData.contains("test_cases")) {
             return -1;
@@ -475,7 +475,7 @@ public:
             imported["problem"] = problemData["problem"];
             imported["test_cases"] = problemData["test_cases"];
         } else {
-            // JudgeLite 旧格式
+            // CLIJudge 旧格式
             imported = problemData;
         }
         
@@ -807,7 +807,7 @@ inline int cmdSubmit(const std::string& dataDir, int problemId, const std::strin
     ProblemStore store(dataDir);
     auto submission = store.submit(problemId, filePath);
 
-    judgelite::submit::addSubmission(dataDir, problemId, "", filePath,
+    clijudge::submit::addSubmission(dataDir, problemId, "", filePath,
                                      submission.status, submission.score,
                                      submission.timeUsed, submission.memoryUsed,
                                      username);
@@ -1008,12 +1008,12 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         }
     }
     else {
-        std::cerr << "无效的导入格式，期望NoldOJ或JudgeLite格式。" << std::endl;
+        std::cerr << "无效的导入格式，期望NoldOJ或CLIJudge格式。" << std::endl;
         return 1;
     }
 }
 
 } // namespace problem
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_PROBLEM_H
+#endif // CLIJUDGE_PROBLEM_H

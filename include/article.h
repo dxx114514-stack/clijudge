@@ -1,8 +1,8 @@
-#ifndef JUDGELITE_ARTICLE_H
-#define JUDGELITE_ARTICLE_H
+#ifndef CLIJUDGE_ARTICLE_H
+#define CLIJUDGE_ARTICLE_H
 
 // article.h
-// JudgeLite 文章管理子命令
+// CLIJudge 文章管理子命令
 //
 // 子命令:
 //   count - 统计文章数量
@@ -20,7 +20,7 @@
 #include <filesystem>
 #include "json.hpp"
 
-namespace judgelite {
+namespace clijudge {
 namespace article {
 
 using json = nlohmann::json;
@@ -243,6 +243,6 @@ inline int cmdView(const std::string& dataDir, int id) {
 }
 
 } // namespace article
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_ARTICLE_H
+#endif // CLIJUDGE_ARTICLE_H

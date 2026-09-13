@@ -1,8 +1,8 @@
-#ifndef JUDGELITE_SUBMIT_H
-#define JUDGELITE_SUBMIT_H
+#ifndef CLIJUDGE_SUBMIT_H
+#define CLIJUDGE_SUBMIT_H
 
 // submit.h
-// JudgeLite 提交管理子命令
+// CLIJudge 提交管理子命令
 //
 // 子命令:
 //   count - 统计提交数量
@@ -17,7 +17,7 @@
 #include <filesystem>
 #include "json.hpp"
 
-namespace judgelite {
+namespace clijudge {
 namespace submit {
 
 using json = nlohmann::json;
@@ -214,6 +214,6 @@ inline int addSubmission(const std::string& dataDir, int problemId, const std::s
 }
 
 } // namespace submit
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_SUBMIT_H
+#endif // CLIJUDGE_SUBMIT_H

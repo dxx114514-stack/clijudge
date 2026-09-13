@@ -20,7 +20,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          g++ -std=c++17 -O2 -static -I include -o judgelite.exe src/main.cpp -lpsapi -luserenv -lole32
+          g++ -std=c++17 -O2 -static -I include -o clijudge.exe src/main.cpp -lpsapi -luserenv -lole32
       
       - name: Check commit message
         id: check
@@ -66,8 +66,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: judgelite-windows-${{ github.ref_name }}
-          path: judgelite.exe
+          name: clijudge-windows-${{ github.ref_name }}
+          path: clijudge.exe
       
       - name: Create Release
         if: steps.check.outputs.is_release == 'true'
@@ -77,6 +77,6 @@ jobs:
           name: v${{ steps.check.outputs.version }}
           body: ${{ steps.changelog.outputs.changelog }}
           files: |
-            judgelite.exe
+            clijudge.exe
           draft: false
           prerelease: false

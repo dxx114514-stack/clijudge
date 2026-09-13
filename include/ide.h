@@ -1,8 +1,8 @@
-#ifndef JUDGELITE_IDE_H
-#define JUDGELITE_IDE_H
+#ifndef CLIJUDGE_IDE_H
+#define CLIJUDGE_IDE_H
 
 // ide.h
-// JudgeLite IDE子命令
+// CLIJudge IDE子命令
 //
 // 子命令:
 //   run [代码路径] [in文件路径] - 运行代码
@@ -15,7 +15,7 @@
 #include <cstdlib>
 #include "sandbox_runner.hpp"
 
-namespace judgelite {
+namespace clijudge {
 namespace ide {
 
 namespace fs = std::filesystem;
@@ -68,7 +68,7 @@ std::string createWorkDir() {
     CoCreateGuid(&g);
     sprintf_s(guid, "%08X%04X%04X", g.Data1, g.Data2, g.Data3);
 
-    std::string workDir = std::string(tempPath) + "judgelite_ide_" + guid;
+    std::string workDir = std::string(tempPath) + "clijudge_ide_" + guid;
     fs::create_directories(workDir);
     return workDir;
 }
@@ -106,7 +106,7 @@ int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
 
     // 使用沙箱运行
     std::vector<std::string> args = {runCmd};
-    auto result = judgelite::sandbox_run(
+    auto result = clijudge::sandbox_run(
         10000,  // 10秒超时
         256,    // 256MB内存限制
         1,      // 单进程
@@ -147,6 +147,6 @@ void showHelp() {
 }
 
 } // namespace ide
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_IDE_H
+#endif // CLIJUDGE_IDE_H

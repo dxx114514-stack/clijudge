@@ -1,8 +1,8 @@
-#ifndef JUDGELITE_SANDBOX_RUNNER_HPP
-#define JUDGELITE_SANDBOX_RUNNER_HPP
+#ifndef CLIJUDGE_SANDBOX_RUNNER_HPP
+#define CLIJUDGE_SANDBOX_RUNNER_HPP
 
 // sandbox_runner.hpp
-// JudgeLite 安全沙箱运行器 — 基于 Windows Job Object + 受限令牌
+// CLIJudge 安全沙箱运行器 — 基于 Windows Job Object + 受限令牌
 //
 // 安全特性:
 //   1. CREATE_SUSPENDED 创建进程，绑定 Job 后再 ResumeThread，杜绝竞态逃逸
@@ -14,7 +14,7 @@
 //   7. CPU 时间限制 — Job Object per-job user time limit + 轮询
 //   8. 低完整性级别 — 禁止向高完整性对象写入
 //
-// 编译: g++ -O2 -static -o judgelite.exe main.cpp -lpsapi -luserenv
+// 编译: g++ -O2 -static -o clijudge.exe main.cpp -lpsapi -luserenv
 // 用法: 通过 main.cpp 调用 sandbox_run() 函数
 
 #define WINVER 0x0600
@@ -34,7 +34,7 @@
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "userenv.lib")
 
-namespace judgelite {
+namespace clijudge {
 
 // ── 构造子进程最小白名单环境块 ─────────────────────────────
 // 子进程不应继承父进程完整环境变量（可能含 API 密钥等敏感值）。
@@ -551,6 +551,6 @@ inline SandboxResult sandbox_run(
     return result;
 }
 
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_SANDBOX_RUNNER_HPP
+#endif // CLIJUDGE_SANDBOX_RUNNER_HPP

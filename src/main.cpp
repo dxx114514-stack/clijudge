@@ -1,7 +1,7 @@
 // main.cpp
-// JudgeLite 轻量级命令行在线评测系统主入口
+// CliJudge 轻量级命令行在线评测系统主入口
 //
-// 用法: judgelite.exe <子命令> [参数...]
+// 用法: clijudge.exe <子命令> [参数...]
 //
 // 子命令列表:
 //   article
@@ -61,13 +61,13 @@ namespace fs = std::filesystem;
 
 // GBK 转 UTF-8 (用于处理命令行参数)
 inline std::string toUtf8(const std::string& str) {
-    return judgelite::encoding::gbkToUtf8(str);
+    return clijudge::encoding::gbkToUtf8(str);
 }
 
 // 默认数据目录
 std::string getDataDir() {
     // 优先使用环境变量
-    const char* dataDir = getenv("JUDGELITE_DATA_DIR");
+    const char* dataDir = getenv("CLIJUDGE_DATA_DIR");
     if (dataDir && dataDir[0]) {
         return std::string(dataDir);
     }
@@ -84,9 +84,9 @@ std::string getDataDir() {
 
 // 显示帮助信息
 void showHelp() {
-    std::cout << "JudgeLite - 轻量级命令行在线评测系统" << std::endl;
+    std::cout << "CliJudge - 轻量级命令行在线评测系统" << std::endl;
     std::cout << std::endl;
-    std::cout << "用法: judgelite.exe <命令> [参数...]" << std::endl;
+    std::cout << "用法: clijudge.exe <命令> [参数...]" << std::endl;
     std::cout << std::endl;
     std::cout << "命令:" << std::endl;
     std::cout << "  article   - 文章管理" << std::endl;
@@ -95,7 +95,7 @@ void showHelp() {
     std::cout << "  problem   - 题目管理" << std::endl;
     std::cout << "  submit    - 提交管理" << std::endl;
     std::cout << std::endl;
-    std::cout << "使用 'judgelite.exe <命令> help' 查看命令详细帮助。" << std::endl;
+    std::cout << "使用 'clijudge.exe <命令> help' 查看命令详细帮助。" << std::endl;
 }
 
 // 显示子命令帮助
@@ -194,33 +194,33 @@ int main(int argc, char* argv[]) {
             showCommandHelp("article");
             return 0;
         } else if (subCmd == "count") {
-            return judgelite::article::cmdCount(dataDir);
+            return clijudge::article::cmdCount(dataDir);
         } else if (subCmd == "create") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe article create [标题] [md文件路径]" << std::endl;
+                std::cerr << "用法: clijudge.exe article create [标题] [md文件路径]" << std::endl;
                 return 1;
             }
             std::string title = toUtf8(argv[3]);
             std::string mdFile = (argc >= 5) ? argv[4] : "";
-            return judgelite::article::cmdCreate(dataDir, title, mdFile);
+            return clijudge::article::cmdCreate(dataDir, title, mdFile);
         } else if (subCmd == "delete") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe article delete [编号]" << std::endl;
+                std::cerr << "用法: clijudge.exe article delete [编号]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::article::cmdDelete(dataDir, id);
+            return clijudge::article::cmdDelete(dataDir, id);
         } else if (subCmd == "list") {
             int L = (argc >= 4) ? parseInt(argv[3], 1) : 1;
             int R = (argc >= 5) ? parseInt(argv[4], 50) : 50;
-            return judgelite::article::cmdList(dataDir, L, R);
+            return clijudge::article::cmdList(dataDir, L, R);
         } else if (subCmd == "view") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe article view [编号]" << std::endl;
+                std::cerr << "用法: clijudge.exe article view [编号]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::article::cmdView(dataDir, id);
+            return clijudge::article::cmdView(dataDir, id);
         } else {
             std::cerr << "未知的文章命令: " << subCmd << std::endl;
             showCommandHelp("article");
@@ -241,7 +241,7 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (subCmd == "create") {
             if (argc < 7) {
-                std::cerr << "用法: judgelite.exe contest create [标题] [开始时间] [结束时间] [题目1] [题目2]" << std::endl;
+                std::cerr << "用法: clijudge.exe contest create [标题] [开始时间] [结束时间] [题目1] [题目2]" << std::endl;
                 return 1;
             }
             std::string title = toUtf8(argv[3]);
@@ -251,17 +251,17 @@ int main(int argc, char* argv[]) {
             for (int i = 6; i < argc; i++) {
                 problemIds.push_back(parseInt(argv[i]));
             }
-            return judgelite::contest::cmdCreate(dataDir, title, startTime, endTime, problemIds);
+            return clijudge::contest::cmdCreate(dataDir, title, startTime, endTime, problemIds);
         } else if (subCmd == "delete") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe contest delete [编号]" << std::endl;
+                std::cerr << "用法: clijudge.exe contest delete [编号]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::contest::cmdDelete(dataDir, id);
+            return clijudge::contest::cmdDelete(dataDir, id);
         } else if (subCmd == "problem") {
             if (argc < 5) {
-                std::cerr << "用法: judgelite.exe contest problem [编号] [题目索引] [submit|view]" << std::endl;
+                std::cerr << "用法: clijudge.exe contest problem [编号] [题目索引] [submit|view]" << std::endl;
                 return 1;
             }
             int contestId = parseInt(argv[3]);
@@ -270,7 +270,7 @@ int main(int argc, char* argv[]) {
                 std::string action = argv[5];
                 if (action == "submit") {
                     if (argc < 7) {
-                        std::cerr << "用法: judgelite.exe contest problem [编号] [题目索引] submit [文件] [--as 用户名]" << std::endl;
+                        std::cerr << "用法: clijudge.exe contest problem [编号] [题目索引] submit [文件] [--as 用户名]" << std::endl;
                         return 1;
                     }
                     std::string filePath = argv[6];
@@ -280,44 +280,44 @@ int main(int argc, char* argv[]) {
                             username = argv[++i];
                         }
                     }
-                    return judgelite::contest::cmdProblemSubmit(dataDir, contestId, probIndex, filePath, username);
+                    return clijudge::contest::cmdProblemSubmit(dataDir, contestId, probIndex, filePath, username);
                 } else if (action == "view") {
-                    return judgelite::contest::cmdProblemView(dataDir, contestId, probIndex);
+                    return clijudge::contest::cmdProblemView(dataDir, contestId, probIndex);
                 }
             }
             std::cerr << "未知的比赛题目操作。" << std::endl;
             return 1;
         } else if (subCmd == "view") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe contest view [编号]" << std::endl;
+                std::cerr << "用法: clijudge.exe contest view [编号]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::contest::cmdView(dataDir, id);
+            return clijudge::contest::cmdView(dataDir, id);
         } else if (subCmd == "list") {
-            return judgelite::contest::cmdList(dataDir);
+            return clijudge::contest::cmdList(dataDir);
         } else if (subCmd == "leaderboard") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe contest leaderboard [编号]" << std::endl;
+                std::cerr << "用法: clijudge.exe contest leaderboard [编号]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::contest::cmdLeaderboard(dataDir, id);
+            return clijudge::contest::cmdLeaderboard(dataDir, id);
         } else if (subCmd == "import") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe contest import [cdf文件路径]" << std::endl;
+                std::cerr << "用法: clijudge.exe contest import [cdf文件路径]" << std::endl;
                 return 1;
             }
             std::string cdfPath = argv[3];
-            return judgelite::contest::cmdImportCdf(dataDir, cdfPath);
+            return clijudge::contest::cmdImportCdf(dataDir, cdfPath);
         } else if (subCmd == "export") {
             if (argc < 5) {
-                std::cerr << "用法: judgelite.exe contest export [编号] [cdf文件路径]" << std::endl;
+                std::cerr << "用法: clijudge.exe contest export [编号] [cdf文件路径]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
             std::string cdfPath = argv[4];
-            return judgelite::contest::cmdExportCdf(dataDir, id, cdfPath);
+            return clijudge::contest::cmdExportCdf(dataDir, id, cdfPath);
         } else {
             std::cerr << "未知的比赛命令: " << subCmd << std::endl;
             showCommandHelp("contest");
@@ -338,12 +338,12 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (subCmd == "run") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe ide run [代码路径] [输入文件路径]" << std::endl;
+                std::cerr << "用法: clijudge.exe ide run [代码路径] [输入文件路径]" << std::endl;
                 return 1;
             }
             std::string codePath = argv[3];
             std::string inputPath = (argc >= 5) ? argv[4] : "";
-            return judgelite::ide::cmdRun(codePath, inputPath);
+            return clijudge::ide::cmdRun(codePath, inputPath);
         } else {
             std::cerr << "未知的代码运行命令: " << subCmd << std::endl;
             showCommandHelp("ide");
@@ -363,10 +363,10 @@ int main(int argc, char* argv[]) {
             showCommandHelp("problem");
             return 0;
         } else if (subCmd == "count") {
-            return judgelite::problem::cmdCount(dataDir);
+            return clijudge::problem::cmdCount(dataDir);
         } else if (subCmd == "create") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe problem create [标题] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol]" << std::endl;
+                std::cerr << "用法: clijudge.exe problem create [标题] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol]" << std::endl;
                 return 1;
             }
             std::string title = toUtf8(argv[3]);
@@ -400,20 +400,20 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            return judgelite::problem::cmdCreate(dataDir, title, background, describe,
+            return clijudge::problem::cmdCreate(dataDir, title, background, describe,
                                                   exampleIn, exampleOut, instyle, outstyle,
                                                   compareMode, spjCode, spjExe,
                                                   floatAbsTol, floatRelTol);
         } else if (subCmd == "delete") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe problem delete [编号]" << std::endl;
+                std::cerr << "用法: clijudge.exe problem delete [编号]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::problem::cmdDelete(dataDir, id);
+            return clijudge::problem::cmdDelete(dataDir, id);
         } else if (subCmd == "edit") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe problem edit [编号] [-title 标题] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol]" << std::endl;
+                std::cerr << "用法: clijudge.exe problem edit [编号] [-title 标题] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -449,24 +449,24 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            return judgelite::problem::cmdEdit(dataDir, id, title, background, describe,
+            return clijudge::problem::cmdEdit(dataDir, id, title, background, describe,
                                                exampleIn, exampleOut, instyle, outstyle,
                                                compareMode, spjCode, spjExe,
                                                floatAbsTol, floatRelTol);
         } else if (subCmd == "view") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe problem view [编号]" << std::endl;
+                std::cerr << "用法: clijudge.exe problem view [编号]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::problem::cmdView(dataDir, id);
+            return clijudge::problem::cmdView(dataDir, id);
         } else if (subCmd == "list") {
             int L = (argc >= 4) ? parseInt(argv[3], 1) : 1;
             int R = (argc >= 5) ? parseInt(argv[4], 50) : 50;
-            return judgelite::problem::cmdList(dataDir, L, R);
+            return clijudge::problem::cmdList(dataDir, L, R);
         } else if (subCmd == "submit") {
             if (argc < 5) {
-                std::cerr << "用法: judgelite.exe problem submit [编号] [文件] [--as 用户名]" << std::endl;
+                std::cerr << "用法: clijudge.exe problem submit [编号] [文件] [--as 用户名]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -477,37 +477,37 @@ int main(int argc, char* argv[]) {
                     username = argv[++i];
                 }
             }
-            return judgelite::problem::cmdSubmit(dataDir, id, filePath, username);
+            return clijudge::problem::cmdSubmit(dataDir, id, filePath, username);
         } else if (subCmd == "export") {
             if (argc < 5) {
-                std::cerr << "用法: judgelite.exe problem export [编号] [zip路径]" << std::endl;
+                std::cerr << "用法: clijudge.exe problem export [编号] [zip路径]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
             std::string zipPath = argv[4];
-            return judgelite::problem::cmdExport(dataDir, id, zipPath);
+            return clijudge::problem::cmdExport(dataDir, id, zipPath);
         } else if (subCmd == "import") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe problem import [zip路径]" << std::endl;
+                std::cerr << "用法: clijudge.exe problem import [zip路径]" << std::endl;
                 return 1;
             }
             std::string zipPath = argv[3];
-            return judgelite::problem::cmdImport(dataDir, zipPath);
+            return clijudge::problem::cmdImport(dataDir, zipPath);
         } else if (subCmd == "testdata") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe problem testdata [编号] [命令]" << std::endl;
+                std::cerr << "用法: clijudge.exe problem testdata [编号] [命令]" << std::endl;
                 return 1;
             }
             int problemId = parseInt(argv[3]);
             if (argc < 5) {
-                return judgelite::problem::cmdTestDataList(dataDir, problemId);
+                return clijudge::problem::cmdTestDataList(dataDir, problemId);
             }
             std::string tcCmd = argv[4];
             if (tcCmd == "list") {
-                return judgelite::problem::cmdTestDataList(dataDir, problemId);
+                return clijudge::problem::cmdTestDataList(dataDir, problemId);
             } else if (tcCmd == "create") {
                 if (argc < 7) {
-                    std::cerr << "用法: judgelite.exe problem testdata [编号] create [in] [out] [时间] [内存] [分值]" << std::endl;
+                    std::cerr << "用法: clijudge.exe problem testdata [编号] create [in] [out] [时间] [内存] [分值]" << std::endl;
                     return 1;
                 }
                 std::string inputData = argv[5];
@@ -515,14 +515,14 @@ int main(int argc, char* argv[]) {
                 int timeLimit = (argc >= 8) ? parseInt(argv[7], -1) : -1;
                 int memoryLimit = (argc >= 9) ? parseInt(argv[8], -1) : -1;
                 int score = (argc >= 10) ? parseInt(argv[9], 25) : 25;
-                return judgelite::problem::cmdTestDataCreate(dataDir, problemId, inputData, outputData, timeLimit, memoryLimit, score);
+                return clijudge::problem::cmdTestDataCreate(dataDir, problemId, inputData, outputData, timeLimit, memoryLimit, score);
             } else if (tcCmd == "delete") {
                 if (argc < 6) {
-                    std::cerr << "用法: judgelite.exe problem testdata [编号] delete [测试点编号]" << std::endl;
+                    std::cerr << "用法: clijudge.exe problem testdata [编号] delete [测试点编号]" << std::endl;
                     return 1;
                 }
                 int tcId = parseInt(argv[5]);
-                return judgelite::problem::cmdTestDataDelete(dataDir, problemId, tcId);
+                return clijudge::problem::cmdTestDataDelete(dataDir, problemId, tcId);
             } else if (tcCmd == "-set-all") {
                 int timeLimit = -1, memoryLimit = -1, score = -1;
                 for (int i = 5; i < argc; i++) {
@@ -534,10 +534,10 @@ int main(int argc, char* argv[]) {
                         score = parseInt(argv[++i]);
                     }
                 }
-                return judgelite::problem::cmdTestDataSetAll(dataDir, problemId, timeLimit, memoryLimit, score);
+                return clijudge::problem::cmdTestDataSetAll(dataDir, problemId, timeLimit, memoryLimit, score);
             } else if (tcCmd == "-zip") {
                 if (argc < 6) {
-                    std::cerr << "用法: judgelite.exe problem testdata [编号] -zip [zip路径]" << std::endl;
+                    std::cerr << "用法: clijudge.exe problem testdata [编号] -zip [zip路径]" << std::endl;
                     return 1;
                 }
                 std::string zipPath = argv[5];
@@ -567,11 +567,11 @@ int main(int argc, char* argv[]) {
             showCommandHelp("submit");
             return 0;
         } else if (subCmd == "count") {
-            return judgelite::submit::cmdCount(dataDir);
+            return clijudge::submit::cmdCount(dataDir);
         } else if (subCmd == "list") {
             int L = (argc >= 4) ? parseInt(argv[3], 1) : 1;
             int R = (argc >= 5) ? parseInt(argv[4], 50) : 50;
-            return judgelite::submit::cmdList(dataDir, L, R);
+            return clijudge::submit::cmdList(dataDir, L, R);
         } else {
             std::cerr << "未知的提交命令: " << subCmd << std::endl;
             showCommandHelp("submit");

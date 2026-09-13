@@ -1,8 +1,8 @@
-#ifndef JUDGELITE_CONTEST_H
-#define JUDGELITE_CONTEST_H
+#ifndef CLIJUDGE_CONTEST_H
+#define CLIJUDGE_CONTEST_H
 
 // contest.h
-// JudgeLite 比赛管理子命令
+// CLIJudge 比赛管理子命令
 //
 // 子命令:
 //   create [标题] [开始时间] [结束时间] [题目1] [题目2] - 创建比赛
@@ -24,7 +24,7 @@
 #include "cdf.h"
 #include "problem.h"
 
-namespace judgelite {
+namespace clijudge {
 namespace contest {
 
 using json = nlohmann::json;
@@ -251,7 +251,7 @@ public:
 
     // 导入 CDF 格式比赛
     int importCdf(const std::string& cdfPath, const std::string& dataDir) {
-        auto cdf = judgelite::cdf::parseCdf(cdfPath);
+        auto cdf = clijudge::cdf::parseCdf(cdfPath);
         if (cdf.tasks.empty()) {
             std::cerr << "CDF 文件中没有题目。" << std::endl;
             return -1;
@@ -262,7 +262,7 @@ public:
         fs::path cdfDataDir = cdfDir / "data";
 
         // 创建 ProblemStore 来导入题目
-        judgelite::problem::ProblemStore problemStore(dataDir);
+        clijudge::problem::ProblemStore problemStore(dataDir);
         std::vector<int> problemIds;
 
         for (const auto& task : cdf.tasks) {
@@ -271,8 +271,8 @@ public:
             problemJson["problem"]["title"] = task.problemTitle;
             problemJson["problem"]["time_limit"] = task.testCases.empty() ? 1000 : task.testCases[0].timeLimit;
             problemJson["problem"]["memory_limit"] = task.testCases.empty() ? 256 : task.testCases[0].memoryLimit;
-            problemJson["problem"]["compare_mode"] = judgelite::cdf::comparisonModeToJudgeLite(task.comparisonMode);
-            problemJson["problem"]["problem_type"] = judgelite::cdf::taskTypeToJudgeLite(task.taskType);
+            problemJson["problem"]["compare_mode"] = clijudge::cdf::comparisonModeToCLIJudge(task.comparisonMode);
+            problemJson["problem"]["problem_type"] = clijudge::cdf::taskTypeToCLIJudge(task.taskType);
             problemJson["problem"]["is_public"] = true;
             problemJson["problem"]["is_hidden"] = false;
             problemJson["problem"]["spj_code"] = "";
@@ -309,7 +309,7 @@ public:
                 for (const auto& inputFile : tc.inputFiles) {
                     fs::path inputPath = cdfDataDir / inputFile;
                     if (fs::exists(inputPath)) {
-                        inputData += judgelite::cdf::readFileContent(inputPath.string());
+                        inputData += clijudge::cdf::readFileContent(inputPath.string());
                     }
                 }
                 tcJson["input_data"] = inputData;
@@ -319,7 +319,7 @@ public:
                 for (const auto& outputFile : tc.outputFiles) {
                     fs::path outputPath = cdfDataDir / outputFile;
                     if (fs::exists(outputPath)) {
-                        outputData += judgelite::cdf::readFileContent(outputPath.string());
+                        outputData += clijudge::cdf::readFileContent(outputPath.string());
                     }
                 }
                 tcJson["output_data"] = outputData;
@@ -354,7 +354,7 @@ public:
         json contest = view(contestId);
         if (contest.is_null()) return nullptr;
 
-        judgelite::problem::ProblemStore problemStore(dataDir);
+        clijudge::problem::ProblemStore problemStore(dataDir);
 
         json cdf;
         cdf["version"] = "1.0";
@@ -580,6 +580,6 @@ inline int cmdExportCdf(const std::string& dataDir, int contestId, const std::st
 }
 
 } // namespace contest
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_CONTEST_H
+#endif // CLIJUDGE_CONTEST_H

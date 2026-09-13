@@ -1,5 +1,5 @@
-#ifndef JUDGELITE_ENCODING_H
-#define JUDGELITE_ENCODING_H
+#ifndef CLIJUDGE_ENCODING_H
+#define CLIJUDGE_ENCODING_H
 
 // encoding.h
 // 编码转换工具
@@ -7,7 +7,7 @@
 #include <string>
 #include <windows.h>
 
-namespace judgelite {
+namespace clijudge {
 namespace encoding {
 
 // GBK 转 UTF-8
@@ -53,6 +53,6 @@ inline std::string utf8ToGbk(const std::string& utf8) {
 }
 
 } // namespace encoding
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_ENCODING_H
+#endif // CLIJUDGE_ENCODING_H
