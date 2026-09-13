@@ -21,6 +21,8 @@
 #include <filesystem>
 #include <algorithm>
 #include "json.hpp"
+#include "cdf.h"
+#include "problem.h"
 
 namespace judgelite {
 namespace contest {
@@ -247,6 +249,175 @@ public:
         return data;
     }
 
+    // 导入 CDF 格式比赛
+    int importCdf(const std::string& cdfPath, const std::string& dataDir) {
+        auto cdf = judgelite::cdf::parseCdf(cdfPath);
+        if (cdf.tasks.empty()) {
+            std::cerr << "CDF 文件中没有题目。" << std::endl;
+            return -1;
+        }
+
+        // 获取 CDF 数据目录（cdf 文件所在目录下的 data/ 子目录）
+        fs::path cdfDir = fs::path(cdfPath).parent_path();
+        fs::path cdfDataDir = cdfDir / "data";
+
+        // 创建 ProblemStore 来导入题目
+        judgelite::problem::ProblemStore problemStore(dataDir);
+        std::vector<int> problemIds;
+
+        for (const auto& task : cdf.tasks) {
+            // 构建题目 JSON
+            json problemJson;
+            problemJson["problem"]["title"] = task.problemTitle;
+            problemJson["problem"]["time_limit"] = task.testCases.empty() ? 1000 : task.testCases[0].timeLimit;
+            problemJson["problem"]["memory_limit"] = task.testCases.empty() ? 256 : task.testCases[0].memoryLimit;
+            problemJson["problem"]["compare_mode"] = judgelite::cdf::comparisonModeToJudgeLite(task.comparisonMode);
+            problemJson["problem"]["problem_type"] = judgelite::cdf::taskTypeToJudgeLite(task.taskType);
+            problemJson["problem"]["is_public"] = true;
+            problemJson["problem"]["is_hidden"] = false;
+            problemJson["problem"]["spj_code"] = "";
+            problemJson["problem"]["special_judge_exe"] = task.specialJudge;
+            problemJson["problem"]["allowed_languages"] = json::array();
+            problemJson["problem"]["subtask_mode"] = "simple";
+            problemJson["problem"]["description"] = "";
+            problemJson["problem"]["input_desc"] = "";
+            problemJson["problem"]["output_desc"] = "";
+            problemJson["problem"]["hint"] = "";
+            problemJson["problem"]["sample_input"] = "";
+            problemJson["problem"]["sample_output"] = "";
+
+            if (task.comparisonMode == 3) {
+                problemJson["problem"]["float_abs_tolerance"] = 0.0;
+                problemJson["problem"]["float_rel_tolerance"] = 0.0;
+            }
+
+            // 构建测试用例
+            json testCases = json::array();
+            for (size_t i = 0; i < task.testCases.size(); i++) {
+                const auto& tc = task.testCases[i];
+                json tcJson;
+                tcJson["id"] = (int)i + 1;
+                tcJson["score"] = tc.fullScore;
+                tcJson["time_limit"] = -1;
+                tcJson["memory_limit"] = -1;
+                tcJson["sort_order"] = (int)i + 1;
+                tcJson["input_file"] = "";
+                tcJson["output_file"] = "";
+
+                // 读取输入文件
+                std::string inputData;
+                for (const auto& inputFile : tc.inputFiles) {
+                    fs::path inputPath = cdfDataDir / inputFile;
+                    if (fs::exists(inputPath)) {
+                        inputData += judgelite::cdf::readFileContent(inputPath.string());
+                    }
+                }
+                tcJson["input_data"] = inputData;
+
+                // 读取输出文件
+                std::string outputData;
+                for (const auto& outputFile : tc.outputFiles) {
+                    fs::path outputPath = cdfDataDir / outputFile;
+                    if (fs::exists(outputPath)) {
+                        outputData += judgelite::cdf::readFileContent(outputPath.string());
+                    }
+                }
+                tcJson["output_data"] = outputData;
+
+                testCases.push_back(tcJson);
+            }
+            problemJson["test_cases"] = testCases;
+
+            // 导入题目
+            int problemId = problemStore.importProblem(problemJson);
+            if (problemId > 0) {
+                problemIds.push_back(problemId);
+                std::cout << "  导入题目: " << task.problemTitle << " (ID: " << problemId << ")" << std::endl;
+            } else {
+                std::cerr << "  导入题目失败: " << task.problemTitle << std::endl;
+            }
+        }
+
+        // 创建比赛
+        if (problemIds.empty()) {
+            std::cerr << "没有成功导入任何题目。" << std::endl;
+            return -1;
+        }
+
+        int contestId = create(cdf.contestTitle, "", "", problemIds);
+        std::cout << "比赛已导入: " << cdf.contestTitle << " (ID: " << contestId << ")" << std::endl;
+        return contestId;
+    }
+
+    // 导出为 CDF 格式
+    json exportCdf(int contestId) {
+        json contest = view(contestId);
+        if (contest.is_null()) return nullptr;
+
+        judgelite::problem::ProblemStore problemStore(dataDir);
+
+        json cdf;
+        cdf["version"] = "1.0";
+        cdf["contestTitle"] = contest.value("title", "");
+
+        json tasks = json::array();
+        if (contest.contains("problem_ids")) {
+            int idx = 1;
+            for (const auto& pid : contest["problem_ids"]) {
+                int problemId = pid.get<int>();
+                json problem = problemStore.view(problemId);
+                if (problem.is_null()) continue;
+
+                const auto& p = problem["problem"];
+                const auto& testCases = problem.value("test_cases", json::array());
+
+                json task;
+                task["problemTitle"] = p.value("title", "");
+                task["sourceFileName"] = p.value("title", "solution");
+                task["inputFileName"] = p.value("title", "input") + ".in";
+                task["outputFileName"] = p.value("title", "output") + ".out";
+                task["standardInputCheck"] = true;
+                task["standardOutputCheck"] = true;
+                task["taskType"] = 0;
+                task["subFolderCheck"] = false;
+
+                // 映射 comparisonMode
+                std::string compareMode = p.value("compare_mode", "text_strict");
+                if (compareMode == "text_strict") task["comparisonMode"] = 0;
+                else if (compareMode == "text_no_space") task["comparisonMode"] = 1;
+                else if (compareMode == "float_all" || compareMode == "float_abs" || compareMode == "float_rel") task["comparisonMode"] = 3;
+                else task["comparisonMode"] = 4;
+
+                task["diffArguments"] = "--ignore-space-change --text --brief";
+                task["realPrecision"] = 3;
+                task["specialJudge"] = p.value("special_judge_exe", "");
+                task["answerFileExtension"] = "out";
+                task["compilerConfiguration"] = json::object();
+
+                json cdfTestCases = json::array();
+                int caseIdx = 1;
+                for (const auto& tc : testCases) {
+                    json cdfTc;
+                    cdfTc["fullScore"] = tc.value("score", 0);
+                    cdfTc["timeLimit"] = p.value("time_limit", 1000);
+                    cdfTc["memoryLimit"] = p.value("memory_limit", 256);
+                    cdfTc["inputFiles"] = json::array({task["sourceFileName"].get<std::string>() + "/" + std::to_string(caseIdx) + ".in"});
+                    cdfTc["outputFiles"] = json::array({task["sourceFileName"].get<std::string>() + "/" + std::to_string(caseIdx) + ".ans"});
+                    cdfTestCases.push_back(cdfTc);
+                    caseIdx++;
+                }
+                task["testCases"] = cdfTestCases;
+
+                tasks.push_back(task);
+                idx++;
+            }
+        }
+        cdf["tasks"] = tasks;
+        cdf["contestants"] = json::array();
+
+        return cdf;
+    }
+
     // 获取比赛排行榜
     json leaderboard(int contestId) {
         json contest = view(contestId);
@@ -373,6 +544,38 @@ inline int cmdLeaderboard(const std::string& dataDir, int contestId) {
         return 1;
     }
     std::cout << board.dump(2) << std::endl;
+    return 0;
+}
+
+inline int cmdImportCdf(const std::string& dataDir, const std::string& cdfPath) {
+    if (!fs::exists(cdfPath)) {
+        std::cerr << "CDF 文件不存在: " << cdfPath << std::endl;
+        return 1;
+    }
+    ContestStore store(dataDir);
+    int contestId = store.importCdf(cdfPath, dataDir);
+    if (contestId > 0) {
+        return 0;
+    }
+    return 1;
+}
+
+inline int cmdExportCdf(const std::string& dataDir, int contestId, const std::string& cdfPath) {
+    ContestStore store(dataDir);
+    json cdf = store.exportCdf(contestId);
+    if (cdf.is_null()) {
+        std::cerr << "比赛 " << contestId << " 未找到。" << std::endl;
+        return 1;
+    }
+
+    std::ofstream f(cdfPath);
+    if (!f.is_open()) {
+        std::cerr << "无法创建文件: " << cdfPath << std::endl;
+        return 1;
+    }
+    f << cdf.dump(-1);  // 紧凑格式
+    f.close();
+    std::cout << "比赛已导出到: " << cdfPath << std::endl;
     return 0;
 }
 

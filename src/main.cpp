@@ -111,6 +111,8 @@ void showCommandHelp(const std::string& command) {
         std::cout << "比赛命令:" << std::endl;
         std::cout << "  create [标题] [开始时间] [结束时间] [题目1] [题目2]  创建比赛" << std::endl;
         std::cout << "  delete [编号]                  删除比赛" << std::endl;
+        std::cout << "  export [编号] [cdf路径]         导出为 CDF 格式" << std::endl;
+        std::cout << "  import [cdf路径]               从 CDF 格式导入" << std::endl;
         std::cout << "  leaderboard [编号]             查看排行榜" << std::endl;
         std::cout << "  problem [编号] [题目索引]       比赛题目" << std::endl;
         std::cout << "    submit [文件] [--as 用户名]   提交解答" << std::endl;
@@ -301,6 +303,21 @@ int main(int argc, char* argv[]) {
             }
             int id = parseInt(argv[3]);
             return judgelite::contest::cmdLeaderboard(dataDir, id);
+        } else if (subCmd == "import") {
+            if (argc < 4) {
+                std::cerr << "用法: judgelite.exe contest import [cdf文件路径]" << std::endl;
+                return 1;
+            }
+            std::string cdfPath = argv[3];
+            return judgelite::contest::cmdImportCdf(dataDir, cdfPath);
+        } else if (subCmd == "export") {
+            if (argc < 5) {
+                std::cerr << "用法: judgelite.exe contest export [编号] [cdf文件路径]" << std::endl;
+                return 1;
+            }
+            int id = parseInt(argv[3]);
+            std::string cdfPath = argv[4];
+            return judgelite::contest::cmdExportCdf(dataDir, id, cdfPath);
         } else {
             std::cerr << "未知的比赛命令: " << subCmd << std::endl;
             showCommandHelp("contest");
