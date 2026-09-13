@@ -1,8 +1,8 @@
-#ifndef CLIJUDGE_PROBLEM_H
-#define CLIJUDGE_PROBLEM_H
+#ifndef JUDGELITE_PROBLEM_H
+#define JUDGELITE_PROBLEM_H
 
 // problem.h
-// CLIJudge 题目管理子命令
+// JudgeLite 题目管理子命令
 //
 // 子命令:
 //   count - 统计题目数量
@@ -33,8 +33,9 @@
 #include "json.hpp"
 #include "sandbox_runner.hpp"
 #include "submit.h"
+#include "judge.h"
 
-namespace clijudge {
+namespace judgelite {
 namespace problem {
 
 using json = nlohmann::json;
@@ -298,7 +299,7 @@ public:
         return result;
     }
 
-    // 提交题目
+    // 提交题目（使用 judge 模块评判）
     Submission submit(int problemId, const std::string& filePath) {
         Submission sub;
         sub.id = 0;
@@ -323,48 +324,14 @@ public:
             return sub;
         }
 
-        // 获取题目配置
-        int timeLimit = problem["problem"].value("time_limit", 1000);
-        int memoryLimit = problem["problem"].value("memory_limit", 256);
+        // 使用 judge 模块评判
+        auto judgeResult = clijudge::judge::judgeSubmission(problem, filePath);
 
-        // 创建临时工作目录
-        char tempPath[MAX_PATH];
-        GetTempPathA(MAX_PATH, tempPath);
-        std::string workDir = std::string(tempPath) + "clijudge_submit_" + std::to_string(problemId);
-        fs::create_directories(workDir);
-
-        std::string metaFile = workDir + "\\_meta.json";
-
-        // 使用沙箱运行
-        auto result = clijudge::sandbox_run(
-            timeLimit,
-            memoryLimit,
-            1,
-            metaFile.c_str(),
-            filePath.c_str(),
-            {},
-            false
-        );
-
-        // 读取元数据
-        if (fs::exists(metaFile)) {
-            std::ifstream f(metaFile);
-            if (f.is_open()) {
-                json meta;
-                f >> meta;
-                sub.timeUsed = meta.value("time_used", 0);
-                sub.memoryUsed = meta.value("memory_used", 0);
-                sub.status = meta.value("signal", "null");
-                if (sub.status == "null") {
-                    sub.status = (meta.value("exit_code", 0) == 0) ? "accepted" : "runtime_error";
-                }
-            }
-        }
-
-        // 清理临时目录
-        try {
-            fs::remove_all(workDir);
-        } catch (...) {}
+        // 转换结果
+        sub.status = clijudge::judge::statusToAbbr(judgeResult.status);
+        sub.score = judgeResult.totalScore;
+        sub.timeUsed = judgeResult.totalTimeMs;
+        sub.memoryUsed = judgeResult.maxMemoryKB;
 
         return sub;
     }
@@ -461,7 +428,7 @@ public:
         return view(problemId);
     }
 
-    // 从JSON导入题目（支持 NoldOJ 和 CLIJudge 格式）
+    // 从JSON导入题目（支持 NoldOJ 和 JudgeLite 格式）
     int importProblem(const json& problemData) {
         if (!problemData.contains("problem") || !problemData.contains("test_cases")) {
             return -1;
@@ -475,7 +442,7 @@ public:
             imported["problem"] = problemData["problem"];
             imported["test_cases"] = problemData["test_cases"];
         } else {
-            // CLIJudge 旧格式
+            // JudgeLite 旧格式
             imported = problemData;
         }
         
@@ -608,17 +575,17 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
         store.edit(id, updates);
     }
 
-    std::cout << "题目已创建，编号: " << id << std::endl;
+    std::cout << "Problem created with ID: " << id << std::endl;
     return 0;
 }
 
 inline int cmdDelete(const std::string& dataDir, int id) {
     ProblemStore store(dataDir);
     if (store.deleteProblem(id)) {
-        std::cout << "题目 " << id << " 已删除。" << std::endl;
+        std::cout << "Problem " << id << " deleted." << std::endl;
         return 0;
     } else {
-        std::cerr << "题目 " << id << " 未找到。" << std::endl;
+        std::cerr << "Problem " << id << " not found." << std::endl;
         return 1;
     }
 }
@@ -627,34 +594,34 @@ inline int cmdView(const std::string& dataDir, int id) {
     ProblemStore store(dataDir);
     json problem = store.view(id);
     if (problem.is_null()) {
-        std::cerr << "题目 " << id << " 未找到。" << std::endl;
+        std::cerr << "Problem " << id << " not found." << std::endl;
         return 1;
     }
 
     const auto& p = problem["problem"];
 
     // 格式化显示题面
-    std::cout << "=== 题目 " << p.value("id", 0) << " ===" << std::endl;
-    std::cout << "标题: " << p.value("title", "") << std::endl;
+    std::cout << "=== Problem " << p.value("id", 0) << " ===" << std::endl;
+    std::cout << "Title: " << p.value("title", "") << std::endl;
     std::cout << std::endl;
 
     std::string desc = p.value("description", "");
     if (!desc.empty()) {
-        std::cout << "## 题目描述" << std::endl;
+        std::cout << "## Description" << std::endl;
         std::cout << desc << std::endl;
         std::cout << std::endl;
     }
 
     std::string inputDesc = p.value("input_desc", "");
     if (!inputDesc.empty()) {
-        std::cout << "## 输入格式" << std::endl;
+        std::cout << "## Input" << std::endl;
         std::cout << inputDesc << std::endl;
         std::cout << std::endl;
     }
 
     std::string outputDesc = p.value("output_desc", "");
     if (!outputDesc.empty()) {
-        std::cout << "## 输出格式" << std::endl;
+        std::cout << "## Output" << std::endl;
         std::cout << outputDesc << std::endl;
         std::cout << std::endl;
     }
@@ -662,15 +629,15 @@ inline int cmdView(const std::string& dataDir, int id) {
     std::string sampleIn = p.value("sample_input", "");
     std::string sampleOut = p.value("sample_output", "");
     if (!sampleIn.empty() || !sampleOut.empty()) {
-        std::cout << "## 样例输入/输出" << std::endl;
+        std::cout << "## Sample Input/Output" << std::endl;
         if (!sampleIn.empty()) {
-            std::cout << "输入:" << std::endl;
+            std::cout << "Input:" << std::endl;
             std::cout << "```" << std::endl;
             std::cout << sampleIn << std::endl;
             std::cout << "```" << std::endl;
         }
         if (!sampleOut.empty()) {
-            std::cout << "输出:" << std::endl;
+            std::cout << "Output:" << std::endl;
             std::cout << "```" << std::endl;
             std::cout << sampleOut << std::endl;
             std::cout << "```" << std::endl;
@@ -680,16 +647,16 @@ inline int cmdView(const std::string& dataDir, int id) {
 
     std::string hint = p.value("hint", "");
     if (!hint.empty()) {
-        std::cout << "## 提示" << std::endl;
+        std::cout << "## Hint" << std::endl;
         std::cout << hint << std::endl;
         std::cout << std::endl;
     }
 
-    std::cout << "## 限制" << std::endl;
-    std::cout << "时间限制: " << p.value("time_limit", 1000) << " 毫秒" << std::endl;
-    std::cout << "内存限制: " << p.value("memory_limit", 256) << " MB" << std::endl;
-    std::cout << "公开: " << (p.value("is_public", true) ? "是" : "否") << std::endl;
-    std::cout << "隐藏: " << (p.value("is_hidden", false) ? "是" : "否") << std::endl;
+    std::cout << "## Limits" << std::endl;
+    std::cout << "Time Limit: " << p.value("time_limit", 1000) << " ms" << std::endl;
+    std::cout << "Memory Limit: " << p.value("memory_limit", 256) << " MB" << std::endl;
+    std::cout << "Public: " << (p.value("is_public", true) ? "Yes" : "No") << std::endl;
+    std::cout << "Hidden: " << (p.value("is_hidden", false) ? "Yes" : "No") << std::endl;
 
     // Special Judge 相关信息
     std::string problemType = p.value("problem_type", "traditional");
@@ -697,23 +664,23 @@ inline int cmdView(const std::string& dataDir, int id) {
     
     if (problemType != "traditional" || compareMode != "text_strict") {
         std::cout << std::endl;
-        std::cout << "## 特殊评测" << std::endl;
-        std::cout << "题目类型: " << problemType << std::endl;
-        std::cout << "比较模式: " << compareMode << std::endl;
+        std::cout << "## Special Judge" << std::endl;
+        std::cout << "Problem Type: " << problemType << std::endl;
+        std::cout << "Compare Mode: " << compareMode << std::endl;
         
         if (compareMode == "float_abs" || compareMode == "float_rel" || compareMode == "float_all") {
-            std::cout << "浮点绝对误差: " << p.value("float_abs_tolerance", 0.0) << std::endl;
-            std::cout << "浮点相对误差: " << p.value("float_rel_tolerance", 0.0) << std::endl;
+            std::cout << "Float Abs Tolerance: " << p.value("float_abs_tolerance", 0.0) << std::endl;
+            std::cout << "Float Rel Tolerance: " << p.value("float_rel_tolerance", 0.0) << std::endl;
         }
         
         std::string specialJudgeExe = p.value("special_judge_exe", "");
         if (!specialJudgeExe.empty()) {
-            std::cout << "特殊评测程序: " << specialJudgeExe << std::endl;
+            std::cout << "Special Judge Exe: " << specialJudgeExe << std::endl;
         }
         
         const auto& allowedLangs = p.value("allowed_languages", json::array());
         if (!allowedLangs.empty()) {
-            std::cout << "允许的语言: ";
+            std::cout << "Allowed Languages: ";
             for (size_t i = 0; i < allowedLangs.size(); i++) {
                 if (i > 0) std::cout << ", ";
                 std::cout << allowedLangs[i].get<std::string>();
@@ -782,15 +749,15 @@ inline int cmdEdit(const std::string& dataDir, int id,
     }
 
     if (updates.empty()) {
-        std::cerr << "未指定更新内容。" << std::endl;
+        std::cerr << "No updates specified." << std::endl;
         return 1;
     }
 
     if (store.edit(id, updates)) {
-        std::cout << "题目 " << id << " 已更新。" << std::endl;
+        std::cout << "Problem " << id << " updated." << std::endl;
         return 0;
     } else {
-        std::cerr << "题目 " << id << " 未找到。" << std::endl;
+        std::cerr << "Problem " << id << " not found." << std::endl;
         return 1;
     }
 }
@@ -807,18 +774,19 @@ inline int cmdSubmit(const std::string& dataDir, int problemId, const std::strin
     ProblemStore store(dataDir);
     auto submission = store.submit(problemId, filePath);
 
-    clijudge::submit::addSubmission(dataDir, problemId, "", filePath,
+    judgelite::submit::addSubmission(dataDir, problemId, "", filePath,
                                      submission.status, submission.score,
                                      submission.timeUsed, submission.memoryUsed,
                                      username);
 
-    std::cout << "提交结果:" << std::endl;
-    std::cout << "  状态: " << submission.status << std::endl;
-    std::cout << "  时间: " << submission.timeUsed << " 毫秒" << std::endl;
-    std::cout << "  内存: " << submission.memoryUsed << " KB" << std::endl;
-    std::cout << "  用户: " << (username.empty() ? "unknown" : username) << std::endl;
+    std::cout << "=== Submission Result ===" << std::endl;
+    std::cout << "Status: " << submission.status << std::endl;
+    std::cout << "Score: " << submission.score << std::endl;
+    std::cout << "Time: " << submission.timeUsed << " ms" << std::endl;
+    std::cout << "Memory: " << submission.memoryUsed << " KB" << std::endl;
+    std::cout << "User: " << (username.empty() ? "unknown" : username) << std::endl;
 
-    return (submission.status == "accepted") ? 0 : 1;
+    return (submission.status == "AC") ? 0 : 1;
 }
 
 inline int cmdTestDataList(const std::string& dataDir, int problemId) {
@@ -838,12 +806,12 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     // 读取文件内容
     std::string inContent = readFileContent(inputData);
     if (inContent.empty()) {
-        std::cerr << "无法读取输入文件: " << inputData << std::endl;
+        std::cerr << "Failed to read input file: " << inputData << std::endl;
         return 1;
     }
     std::string outContent = readFileContent(outputData);
     if (outContent.empty()) {
-        std::cerr << "无法读取输出文件: " << outputData << std::endl;
+        std::cerr << "Failed to read output file: " << outputData << std::endl;
         return 1;
     }
     TestCase tc;
@@ -858,10 +826,10 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     tc.sortOrder = nextId;
 
     if (store.addTestCase(problemId, tc)) {
-        std::cout << "测试点已创建，编号: " << tc.id << std::endl;
+        std::cout << "Test case created with ID: " << tc.id << std::endl;
         return 0;
     } else {
-        std::cerr << "创建测试点失败。" << std::endl;
+        std::cerr << "Failed to create test case." << std::endl;
         return 1;
     }
 }
@@ -869,10 +837,10 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
 inline int cmdTestDataDelete(const std::string& dataDir, int problemId, int testCaseId) {
     ProblemStore store(dataDir);
     if (store.deleteTestCase(problemId, testCaseId)) {
-        std::cout << "测试点 " << testCaseId << " 已删除。" << std::endl;
+        std::cout << "Test case " << testCaseId << " deleted." << std::endl;
         return 0;
     } else {
-        std::cerr << "测试点 " << testCaseId << " 未找到。" << std::endl;
+        std::cerr << "Test case " << testCaseId << " not found." << std::endl;
         return 1;
     }
 }
@@ -881,10 +849,10 @@ inline int cmdTestDataSetAll(const std::string& dataDir, int problemId,
                              int timeLimit = -1, int memoryLimit = -1, int score = -1) {
     ProblemStore store(dataDir);
     if (store.setAllTestCaseDefaults(problemId, timeLimit, memoryLimit, score)) {
-        std::cout << "所有测试点已更新。" << std::endl;
+        std::cout << "All test cases updated." << std::endl;
         return 0;
     } else {
-        std::cerr << "更新测试点失败。" << std::endl;
+        std::cerr << "Failed to update test cases." << std::endl;
         return 1;
     }
 }
@@ -893,7 +861,7 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
     ProblemStore store(dataDir);
     json problem = store.exportProblem(problemId);
     if (problem.is_null()) {
-        std::cerr << "题目 " << problemId << " 未找到。" << std::endl;
+        std::cerr << "Problem " << problemId << " not found." << std::endl;
         return 1;
     }
 
@@ -931,7 +899,7 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
 
     if (isZip) {
         // ZIP 格式导出（需要 miniz 库支持）
-        std::cerr << "ZIP导出需要miniz库支持，请使用.json格式。" << std::endl;
+        std::cerr << "ZIP export requires miniz library. Use .json format instead." << std::endl;
         return 1;
     }
 
@@ -940,17 +908,17 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
     if (f.is_open()) {
         f << exportData.dump(2);
         f.close();
-        std::cout << "题目已导出到: " << outputPath << std::endl;
+        std::cout << "Problem exported to: " << outputPath << std::endl;
         return 0;
     } else {
-        std::cerr << "创建导出文件失败。" << std::endl;
+        std::cerr << "Failed to create export file." << std::endl;
         return 1;
     }
 }
 
 inline int cmdImport(const std::string& dataDir, const std::string& importPath) {
     if (!fs::exists(importPath)) {
-        std::cerr << "导入文件未找到: " << importPath << std::endl;
+        std::cerr << "Import file not found: " << importPath << std::endl;
         return 1;
     }
 
@@ -963,13 +931,13 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
     }
 
     if (isZip) {
-        std::cerr << "ZIP导入需要miniz库支持，请使用.json格式。" << std::endl;
+        std::cerr << "ZIP import requires miniz library. Use .json format instead." << std::endl;
         return 1;
     }
 
     std::ifstream f(importPath);
     if (!f.is_open()) {
-        std::cerr << "打开导入文件失败。" << std::endl;
+        std::cerr << "Failed to open import file." << std::endl;
         return 1;
     }
 
@@ -978,7 +946,7 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         f >> problemData;
         f.close();
     } catch (const json::parse_error& e) {
-        std::cerr << "解析导入文件失败: " << e.what() << std::endl;
+        std::cerr << "Failed to parse import file: " << e.what() << std::endl;
         return 1;
     }
 
@@ -988,10 +956,10 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         ProblemStore store(dataDir);
         int id = store.importProblem(problemData);
         if (id > 0) {
-            std::cout << "题目已导入，编号: " << id << std::endl;
+            std::cout << "Problem imported with ID: " << id << std::endl;
             return 0;
         } else {
-            std::cerr << "导入题目失败。" << std::endl;
+            std::cerr << "Failed to import problem." << std::endl;
             return 1;
         }
     }
@@ -1000,20 +968,20 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         ProblemStore store(dataDir);
         int id = store.importProblem(problemData);
         if (id > 0) {
-            std::cout << "题目已导入，编号: " << id << std::endl;
+            std::cout << "Problem imported with ID: " << id << std::endl;
             return 0;
         } else {
-            std::cerr << "导入题目失败。" << std::endl;
+            std::cerr << "Failed to import problem." << std::endl;
             return 1;
         }
     }
     else {
-        std::cerr << "无效的导入格式，期望NoldOJ或CLIJudge格式。" << std::endl;
+        std::cerr << "Invalid import format. Expected NoldOJ or JudgeLite format." << std::endl;
         return 1;
     }
 }
 
 } // namespace problem
-} // namespace clijudge
+} // namespace judgelite
 
-#endif // CLIJUDGE_PROBLEM_H
+#endif // JUDGELITE_PROBLEM_H

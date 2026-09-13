@@ -1,5 +1,5 @@
-#ifndef CLIJUDGE_CDF_H
-#define CLIJUDGE_CDF_H
+#ifndef JUDGELITE_CDF_H
+#define JUDGELITE_CDF_H
 
 // cdf.h
 // LemonLime CDF (Contest Data Format) 导入导出支持
@@ -31,7 +31,7 @@
 #include <algorithm>
 #include "json.hpp"
 
-namespace clijudge {
+namespace judgelite {
 namespace cdf {
 
 using json = nlohmann::json;
@@ -198,8 +198,8 @@ inline CdfContest parseCdf(const std::string& cdfPath) {
     return contest;
 }
 
-// CDF ComparisonMode 转 CLIJudge compare_mode
-inline std::string comparisonModeToCLIJudge(int mode) {
+// CDF ComparisonMode 转 JudgeLite compare_mode
+inline std::string comparisonModeToJudgeLite(int mode) {
     switch (mode) {
         case 0: return "text_strict";
         case 1: return "text_no_space";
@@ -211,8 +211,8 @@ inline std::string comparisonModeToCLIJudge(int mode) {
     }
 }
 
-// CDF TaskType 转 CLIJudge problem_type
-inline std::string taskTypeToCLIJudge(int type) {
+// CDF TaskType 转 JudgeLite problem_type
+inline std::string taskTypeToJudgeLite(int type) {
     switch (type) {
         case 0: return "traditional";
         case 1: return "answers_only";
@@ -271,6 +271,6 @@ inline json taskToJson(const CdfTask& task) {
 }
 
 } // namespace cdf
-} // namespace clijudge
+} // namespace judgelite
 
-#endif // CLIJUDGE_CDF_H
+#endif // JUDGELITE_CDF_H

@@ -1,8 +1,8 @@
-#ifndef CLIJUDGE_CONTEST_H
-#define CLIJUDGE_CONTEST_H
+#ifndef JUDGELITE_CONTEST_H
+#define JUDGELITE_CONTEST_H
 
 // contest.h
-// CLIJudge 比赛管理子命令
+// JudgeLite 比赛管理子命令
 //
 // 子命令:
 //   create [标题] [开始时间] [结束时间] [题目1] [题目2] - 创建比赛
@@ -24,7 +24,7 @@
 #include "cdf.h"
 #include "problem.h"
 
-namespace clijudge {
+namespace judgelite {
 namespace contest {
 
 using json = nlohmann::json;
@@ -251,7 +251,7 @@ public:
 
     // 导入 CDF 格式比赛
     int importCdf(const std::string& cdfPath, const std::string& dataDir) {
-        auto cdf = clijudge::cdf::parseCdf(cdfPath);
+        auto cdf = judgelite::cdf::parseCdf(cdfPath);
         if (cdf.tasks.empty()) {
             std::cerr << "CDF 文件中没有题目。" << std::endl;
             return -1;
@@ -262,7 +262,7 @@ public:
         fs::path cdfDataDir = cdfDir / "data";
 
         // 创建 ProblemStore 来导入题目
-        clijudge::problem::ProblemStore problemStore(dataDir);
+        judgelite::problem::ProblemStore problemStore(dataDir);
         std::vector<int> problemIds;
 
         for (const auto& task : cdf.tasks) {
@@ -271,8 +271,8 @@ public:
             problemJson["problem"]["title"] = task.problemTitle;
             problemJson["problem"]["time_limit"] = task.testCases.empty() ? 1000 : task.testCases[0].timeLimit;
             problemJson["problem"]["memory_limit"] = task.testCases.empty() ? 256 : task.testCases[0].memoryLimit;
-            problemJson["problem"]["compare_mode"] = clijudge::cdf::comparisonModeToCLIJudge(task.comparisonMode);
-            problemJson["problem"]["problem_type"] = clijudge::cdf::taskTypeToCLIJudge(task.taskType);
+            problemJson["problem"]["compare_mode"] = judgelite::cdf::comparisonModeToJudgeLite(task.comparisonMode);
+            problemJson["problem"]["problem_type"] = judgelite::cdf::taskTypeToJudgeLite(task.taskType);
             problemJson["problem"]["is_public"] = true;
             problemJson["problem"]["is_hidden"] = false;
             problemJson["problem"]["spj_code"] = "";
@@ -309,7 +309,7 @@ public:
                 for (const auto& inputFile : tc.inputFiles) {
                     fs::path inputPath = cdfDataDir / inputFile;
                     if (fs::exists(inputPath)) {
-                        inputData += clijudge::cdf::readFileContent(inputPath.string());
+                        inputData += judgelite::cdf::readFileContent(inputPath.string());
                     }
                 }
                 tcJson["input_data"] = inputData;
@@ -319,7 +319,7 @@ public:
                 for (const auto& outputFile : tc.outputFiles) {
                     fs::path outputPath = cdfDataDir / outputFile;
                     if (fs::exists(outputPath)) {
-                        outputData += clijudge::cdf::readFileContent(outputPath.string());
+                        outputData += judgelite::cdf::readFileContent(outputPath.string());
                     }
                 }
                 tcJson["output_data"] = outputData;
@@ -354,7 +354,7 @@ public:
         json contest = view(contestId);
         if (contest.is_null()) return nullptr;
 
-        clijudge::problem::ProblemStore problemStore(dataDir);
+        judgelite::problem::ProblemStore problemStore(dataDir);
 
         json cdf;
         cdf["version"] = "1.0";
@@ -482,17 +482,17 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
                      const std::vector<int>& problemIds) {
     ContestStore store(dataDir);
     int id = store.create(title, startTime, endTime, problemIds);
-    std::cout << "比赛已创建，编号: " << id << std::endl;
+    std::cout << "Contest created with ID: " << id << std::endl;
     return 0;
 }
 
 inline int cmdDelete(const std::string& dataDir, int id) {
     ContestStore store(dataDir);
     if (store.deleteContest(id)) {
-        std::cout << "比赛 " << id << " 已删除。" << std::endl;
+        std::cout << "Contest " << id << " deleted." << std::endl;
         return 0;
     } else {
-        std::cerr << "比赛 " << id << " 未找到。" << std::endl;
+        std::cerr << "Contest " << id << " not found." << std::endl;
         return 1;
     }
 }
@@ -501,7 +501,7 @@ inline int cmdView(const std::string& dataDir, int id) {
     ContestStore store(dataDir);
     json contest = store.view(id);
     if (contest.is_null()) {
-        std::cerr << "比赛 " << id << " 未找到。" << std::endl;
+        std::cerr << "Contest " << id << " not found." << std::endl;
         return 1;
     }
     std::cout << contest.dump(2) << std::endl;
@@ -513,11 +513,12 @@ inline int cmdProblemSubmit(const std::string& dataDir, int contestId,
                             const std::string& username = "") {
     ContestStore store(dataDir);
     if (store.submitProblem(contestId, problemIndex, filePath, username)) {
-        std::cout << "比赛 " << contestId << " 题目 " << problemIndex << " 提交成功。" << std::endl;
-        std::cout << "  用户: " << (username.empty() ? "unknown" : username) << std::endl;
+        std::cout << "Submission accepted for contest " << contestId
+                  << " problem " << problemIndex << std::endl;
+        std::cout << "  User: " << (username.empty() ? "unknown" : username) << std::endl;
         return 0;
     } else {
-        std::cerr << "提交失败：无效的比赛或题目索引。" << std::endl;
+        std::cerr << "Failed to submit: invalid contest or problem index." << std::endl;
         return 1;
     }
 }
@@ -540,7 +541,7 @@ inline int cmdLeaderboard(const std::string& dataDir, int contestId) {
     ContestStore store(dataDir);
     json board = store.leaderboard(contestId);
     if (board.is_null()) {
-        std::cerr << "比赛 " << contestId << " 未找到。" << std::endl;
+        std::cerr << "Contest " << contestId << " not found." << std::endl;
         return 1;
     }
     std::cout << board.dump(2) << std::endl;
@@ -564,7 +565,7 @@ inline int cmdExportCdf(const std::string& dataDir, int contestId, const std::st
     ContestStore store(dataDir);
     json cdf = store.exportCdf(contestId);
     if (cdf.is_null()) {
-        std::cerr << "比赛 " << contestId << " 未找到。" << std::endl;
+        std::cerr << "Contest " << contestId << " not found." << std::endl;
         return 1;
     }
 
@@ -580,6 +581,6 @@ inline int cmdExportCdf(const std::string& dataDir, int contestId, const std::st
 }
 
 } // namespace contest
-} // namespace clijudge
+} // namespace judgelite
 
-#endif // CLIJUDGE_CONTEST_H
+#endif // JUDGELITE_CONTEST_H
