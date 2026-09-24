@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "name": "zh-CN",
+    "display": "简体中文",
+    "version": "1.0.0"
+  },
+  "strings": {
+    "help": {
+      "title": "CliJudge - 轻量级命令行评测系统",
+      "usage": "用法: clijudge.exe <命令> [参数...]",
+      "commands": "命令:",
+      "article": "文章管理",
+      "contest": "比赛管理",
+      "ide": "代码运行",
+      "problem": "题目管理",
+      "submit": "提交管理",
+      "displaylang": "显示语言设置",
+      "more_info": "使用 'clijudge.exe <命令> help' 查看命令详细帮助。"
+    },
+    "article": {
+      "commands": "文章命令:",
+      "count": "统计文章数量",
+      "create": "创建文章",
+      "delete": "删除文章",
+      "list": "列出文章",
+      "view": "查看文章"
+    },
+    "contest": {
+      "commands": "比赛命令:",
+      "create": "创建比赛",
+      "delete": "删除比赛",
+      "export": "导出比赛为 CDF 格式",
+      "import": "从 CDF 格式导入比赛",
+      "leaderboard": "查看比赛排行榜",
+      "problem": "比赛题目",
+      "submit": "提交解答",
+      "view_submissions": "查看提交记录",
+      "view": "查看比赛"
+    },
+    "problem": {
+      "commands": "题目命令:",
+      "count": "统计题目数量",
+      "create": "创建题目",
+      "delete": "删除题目",
+      "edit": "编辑题目",
+      "export": "导出题目",
+      "import": "导入题目",
+      "list": "列出题目",
+      "submit": "提交解答",
+      "testdata": "测试数据管理",
+      "set_all": "设置所有测试数据默认值",
+      "import_zip": "从 zip 导入测试数据",
+      "create_test": "创建测试点",
+      "delete_test": "删除测试点",
+      "list_test": "列出测试点",
+      "view": "查看题目"
+    },
+    "submit": {
+      "commands": "提交命令:",
+      "count": "统计提交数量",
+      "list": "列出提交记录"
+    },
+    "displaylang": {
+      "commands": "显示语言命令:",
+      "list": "列出本地语言",
+      "list_online": "列出在线语言",
+      "switch": "切换显示语言",
+      "delete": "删除本地语言",
+      "pull": "拉取语言（不切换）"
+    },
+    "judge": {
+      "accepted": "正确",
+      "wrong_answer": "答案错误",
+      "time_limit": "时间超限",
+      "memory_limit": "内存超限",
+      "runtime_error": "运行时错误",
+      "compile_error": "编译错误",
+      "system_error": "系统错误",
+      "skipped": "跳过",
+      "score": "得分",
+      "time": "时间",
+      "memory": "内存",
+      "status": "状态",
+      "user": "用户"
+    },
+    "error": {
+      "no_lang": "错误: 未配置显示语言。",
+      "no_lang_hint": "请运行: clijudge displaylang switch [语言名]",
+      "no_lang_list": "使用 'clijudge displaylang list --online' 查看可用语言。",
+      "not_found": "未找到",
+      "failed": "失败",
+      "usage": "用法:"
+    },
+    "success": {
+      "created": "已创建",
+      "deleted": "已删除",
+      "updated": "已更新",
+      "switched": "已切换到语言",
+      "downloaded": "下载成功"
+    }
+  }
+}

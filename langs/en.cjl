@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "name": "en",
+    "display": "English",
+    "version": "1.0.0"
+  },
+  "strings": {
+    "help": {
+      "title": "CliJudge - Lightweight Command-Line Judge System",
+      "usage": "Usage: clijudge.exe <command> [arguments...]",
+      "commands": "Commands:",
+      "article": "Article management",
+      "contest": "Contest management",
+      "ide": "IDE functions",
+      "problem": "Problem management",
+      "submit": "Submission management",
+      "displaylang": "Display language settings",
+      "more_info": "Use 'clijudge.exe <command> help' for more information about a command."
+    },
+    "article": {
+      "commands": "Article Commands:",
+      "count": "Count articles",
+      "create": "Create article",
+      "delete": "Delete article",
+      "list": "List articles",
+      "view": "View article"
+    },
+    "contest": {
+      "commands": "Contest Commands:",
+      "create": "Create contest",
+      "delete": "Delete contest",
+      "export": "Export contest to CDF",
+      "import": "Import contest from CDF",
+      "leaderboard": "View contest leaderboard",
+      "problem": "Contest problem",
+      "submit": "Submit solution",
+      "view_submissions": "View submissions",
+      "view": "View contest"
+    },
+    "problem": {
+      "commands": "Problem Commands:",
+      "count": "Count problems",
+      "create": "Create problem",
+      "delete": "Delete problem",
+      "edit": "Edit problem",
+      "export": "Export problem",
+      "import": "Import problem",
+      "list": "List problems",
+      "submit": "Submit solution",
+      "testdata": "Test data management",
+      "set_all": "Set all test data defaults",
+      "import_zip": "Import test data from zip",
+      "create_test": "Create test case",
+      "delete_test": "Delete test case",
+      "list_test": "List test cases",
+      "view": "View problem"
+    },
+    "submit": {
+      "commands": "Submit Commands:",
+      "count": "Count submissions",
+      "list": "List submissions"
+    },
+    "displaylang": {
+      "commands": "Display Language Commands:",
+      "list": "List local languages",
+      "list_online": "List online languages",
+      "switch": "Switch display language",
+      "delete": "Delete local language",
+      "pull": "Pull language (no switch)"
+    },
+    "judge": {
+      "accepted": "Accepted",
+      "wrong_answer": "Wrong Answer",
+      "time_limit": "Time Limit Exceeded",
+      "memory_limit": "Memory Limit Exceeded",
+      "runtime_error": "Runtime Error",
+      "compile_error": "Compilation Error",
+      "system_error": "System Error",
+      "skipped": "Skipped",
+      "score": "Score",
+      "time": "Time",
+      "memory": "Memory",
+      "status": "Status",
+      "user": "User"
+    },
+    "error": {
+      "no_lang": "Error: No display language configured.",
+      "no_lang_hint": "Please run: clijudge displaylang switch [langname]",
+      "no_lang_list": "Use 'clijudge displaylang list --online' to see available languages.",
+      "not_found": "not found",
+      "failed": "Failed",
+      "usage": "Usage:"
+    },
+    "success": {
+      "created": "created",
+      "deleted": "deleted",
+      "updated": "updated",
+      "switched": "Switched to language",
+      "downloaded": "Downloaded successfully"
+    }
+  }
+}

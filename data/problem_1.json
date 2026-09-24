@@ -1,0 +1,36 @@
+{
+  "problem": {
+    "allowed_languages": [],
+    "compare_mode": "text_no_space",
+    "description": "",
+    "hint": "",
+    "id": 1,
+    "input_desc": "",
+    "is_hidden": false,
+    "is_public": true,
+    "memory_limit": 512,
+    "output_desc": "",
+    "problem_type": "traditional",
+    "sample_input": "",
+    "sample_output": "",
+    "special_judge_exe": "",
+    "spj_code": "",
+    "subtask_mode": "simple",
+    "time_limit": 1000,
+    "title": "aplusb"
+  },
+  "test_cases": [
+    {
+      "id": 1,
+      "input_data": "1 2",
+      "input_file": "",
+      "memory_limit": -1,
+      "output_data": "3",
+      "output_file": "",
+      "score": 100,
+      "sort_order": 1,
+      "subtask_id": 1,
+      "time_limit": -1
+    }
+  ]
+}
