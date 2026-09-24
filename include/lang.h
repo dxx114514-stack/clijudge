@@ -59,14 +59,51 @@ inline void ensureDir(const std::string& dir) {
     }
 }
 
-// 读取文件内容
+// 读取文件内容并转换为 UTF-8
 inline std::string readFile(const std::string& path) {
     if (!fs::exists(path)) return "";
     std::ifstream f(path, std::ios::binary);
     if (!f.is_open()) return "";
-    std::stringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
+    std::string raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (raw.empty()) return "";
+    
+    // 检测 BOM
+    if (raw.size() >= 3 &&
+        (unsigned char)raw[0] == 0xEF &&
+        (unsigned char)raw[1] == 0xBB &&
+        (unsigned char)raw[2] == 0xBF) {
+        // UTF-8 BOM, 去掉前3字节
+        return raw.substr(3);
+    }
+    if (raw.size() >= 2 &&
+        (unsigned char)raw[0] == 0xFF &&
+        (unsigned char)raw[1] == 0xFE) {
+        // UTF-16 LE BOM, 转换为 UTF-8
+        const wchar_t* wstr = reinterpret_cast<const wchar_t*>(raw.data() + 2);
+        int wlen = (int)((raw.size() - 2) / sizeof(wchar_t));
+        int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr, wlen, nullptr, 0, nullptr, nullptr);
+        if (utf8Len <= 0) return "";
+        std::string utf8Str(utf8Len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, wstr, wlen, &utf8Str[0], utf8Len, nullptr, nullptr);
+        return utf8Str;
+    }
+    if (raw.size() >= 2 &&
+        (unsigned char)raw[0] == 0xFE &&
+        (unsigned char)raw[1] == 0xFF) {
+        // UTF-16 BE BOM, 先转 LE 再转 UTF-8
+        for (size_t i = 2; i + 1 < raw.size(); i += 2) {
+            std::swap(raw[i], raw[i + 1]);
+        }
+        const wchar_t* wstr = reinterpret_cast<const wchar_t*>(raw.data() + 2);
+        int wlen = (int)((raw.size() - 2) / sizeof(wchar_t));
+        int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr, wlen, nullptr, 0, nullptr, nullptr);
+        if (utf8Len <= 0) return "";
+        std::string utf8Str(utf8Len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, wstr, wlen, &utf8Str[0], utf8Len, nullptr, nullptr);
+        return utf8Str;
+    }
+    // 无 BOM, 按 UTF-8 返回
+    return raw;
 }
 
 // 写入文件内容

@@ -478,10 +478,116 @@ inline TestCaseResult judgeTestCase(
     return result;
 }
 
+// ── 编译结果 ─────────────────────────────────────────────────
+struct CompileResult {
+    bool success;
+    std::string exePath;
+    std::string error;
+    std::string language;
+};
+
+// 获取语言名称
+inline std::string getLanguageName(const std::string& ext) {
+    if (ext == ".cpp" || ext == ".cc" || ext == ".cxx") return "C++";
+    if (ext == ".c") return "C";
+    if (ext == ".py") return "Python";
+    if (ext == ".java") return "Java";
+    if (ext == ".js") return "JavaScript";
+    return "Unknown";
+}
+
+// 获取可执行文件扩展名
+inline std::string getExeExtension() {
+    return ".exe";
+}
+
+// 检查是否为可执行文件
+inline bool isExecutable(const std::string& path) {
+    std::string ext = fs::path(path).extension().string();
+    return ext == ".exe" || ext == ".com" || ext == ".bat" || ext == ".cmd";
+}
+
+// 检查是否为脚本语言
+inline bool isScript(const std::string& ext) {
+    return ext == ".py" || ext == ".js";
+}
+
+// 编译源代码
+inline CompileResult compileSource(const std::string& sourcePath, const std::string& workDir) {
+    CompileResult result;
+    result.success = false;
+    result.exePath = "";
+    result.error = "";
+    result.language = "";
+    
+    if (!fs::exists(sourcePath)) {
+        result.error = "Source file not found: " + sourcePath;
+        return result;
+    }
+    
+    std::string ext = fs::path(sourcePath).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    
+    result.language = getLanguageName(ext);
+    
+    // 脚本语言不需要编译
+    if (isScript(ext)) {
+        result.success = true;
+        result.exePath = sourcePath;
+        return result;
+    }
+    
+    // 编译命令
+    std::string compileCmd;
+    std::string absSourcePath = fs::absolute(sourcePath).string();
+    std::string exePath = workDir + "\\output" + getExeExtension();
+    
+    if (ext == ".cpp" || ext == ".cc" || ext == ".cxx") {
+        compileCmd = "g++ -O2 -static -o \"" + exePath + "\" \"" + absSourcePath + "\"";
+    } else if (ext == ".c") {
+        compileCmd = "gcc -O2 -static -o \"" + exePath + "\" \"" + absSourcePath + "\"";
+    } else if (ext == ".java") {
+        // Java 编译到工作目录
+        compileCmd = "javac -d \"" + workDir + "\" \"" + absSourcePath + "\"";
+        exePath = workDir + "\\" + fs::path(absSourcePath).stem().string() + ".class";
+    } else {
+        result.error = "Unsupported language: " + ext;
+        return result;
+    }
+    
+    // 执行编译
+    int compileExitCode = system(compileCmd.c_str());
+    
+    // 检查编译结果
+    if (compileExitCode != 0) {
+        result.error = "Compilation failed (exit code: " + std::to_string(compileExitCode) + ")";
+        return result;
+    }
+    
+    // 验证编译产物存在
+    if (ext == ".java") {
+        // Java: 检查 .class 文件
+        std::string classFile = workDir + "\\" + fs::path(sourcePath).stem().string() + ".class";
+        if (!fs::exists(classFile)) {
+            result.error = "Compilation produced no output";
+            return result;
+        }
+    } else {
+        if (!fs::exists(exePath)) {
+            result.error = "Compilation produced no output";
+            return result;
+        }
+    }
+    
+    result.success = true;
+    result.exePath = exePath;
+    return result;
+}
+
 // ── 完整评判 ─────────────────────────────────────────────────
 inline JudgeResult judgeSubmission(
     const json& problem,
-    const std::string& exePath,
+    const std::string& filePath,
     const std::string& compareMode = "",
     double floatAbsTol = 0.0,
     double floatRelTol = 0.0,
@@ -494,6 +600,32 @@ inline JudgeResult judgeSubmission(
     result.compileError = "";
     result.totalTimeMs = 0;
     result.maxMemoryKB = 0;
+    
+    // 创建临时工作目录
+    char tempPath[MAX_PATH];
+    GetTempPathA(MAX_PATH, tempPath);
+    std::string workDir = std::string(tempPath) + "clijudge_judge_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(GetTickCount());
+    fs::create_directories(workDir);
+    
+    std::string exeToRun = filePath;
+    bool compiledHere = false;
+    
+    // 检查是否为源代码
+    std::string ext = fs::path(filePath).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    
+    if (!isExecutable(ext)) {
+        // 是源代码，需要编译
+        CompileResult compileResult = compileSource(filePath, workDir);
+        if (!compileResult.success) {
+            result.status = JudgeStatus::COMPILATION_ERROR;
+            result.compileError = compileResult.error;
+            try { fs::remove_all(workDir); } catch (...) {}
+            return result;
+        }
+        exeToRun = compileResult.exePath;
+        compiledHere = true;
+    }
     
     // 获取题目配置
     std::string mode = compareMode.empty() ? 
@@ -549,7 +681,7 @@ inline JudgeResult judgeSubmission(
             std::string expectedOutput = tc.value("output_data", "");
             
             TestCaseResult tcResult = judgeTestCase(
-                tcId, tcScore, inputData, expectedOutput, exePath,
+                tcId, tcScore, inputData, expectedOutput, exeToRun,
                 timeLimit, memoryLimit, mode, absTol, relTol, spj
             );
             
@@ -572,6 +704,11 @@ inline JudgeResult judgeSubmission(
         }
         
         result.subtasks.push_back(st);
+    }
+    
+    // 清理临时工作目录
+    if (compiledHere) {
+        try { fs::remove_all(workDir); } catch (...) {}
     }
     
     return result;
