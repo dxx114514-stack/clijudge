@@ -54,6 +54,7 @@
 #include "ide.h"
 #include "problem.h"
 #include "submit.h"
+#include "lang.h"
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -136,6 +137,13 @@ void showCommandHelp(const std::string& command) {
         std::cout << "Submit Commands:" << std::endl;
         std::cout << "  count                          Count submissions" << std::endl;
         std::cout << "  list [L=1] [R=50]              List submissions" << std::endl;
+    } else if (command == "displaylang") {
+        std::cout << "Display Language Commands:" << std::endl;
+        std::cout << "  list                           List local languages" << std::endl;
+        std::cout << "  list --online                  List online languages" << std::endl;
+        std::cout << "  switch [langname]              Switch display language" << std::endl;
+        std::cout << "  delete [langname]              Delete local language" << std::endl;
+        std::cout << "  pull [langname]                Pull language (no switch)" << std::endl;
     } else {
         showHelp();
     }
@@ -164,6 +172,14 @@ int main(int argc, char* argv[]) {
     // 确保数据目录存在
     if (!fs::exists(dataDir)) {
         fs::create_directories(dataDir);
+    }
+
+    // 语言配置检查（displaylang 和 help 命令不需要检查）
+    if (command != "displaylang" && command != "help") {
+        if (!clijudge::lang::isLangConfigured()) {
+            clijudge::lang::showNoLangError();
+            return 1;
+        }
     }
 
     // 帮助命令
@@ -569,6 +585,45 @@ int main(int argc, char* argv[]) {
         } else {
             std::cerr << "Unknown submit command: " << subCmd << std::endl;
             showCommandHelp("submit");
+            return 1;
+        }
+    }
+
+    // 语言管理
+    if (command == "displaylang") {
+        if (argc < 3) {
+            showCommandHelp("displaylang");
+            return 1;
+        }
+
+        std::string subCmd = argv[2];
+        if (subCmd == "help") {
+            showCommandHelp("displaylang");
+            return 0;
+        } else if (subCmd == "list") {
+            bool online = (argc >= 4 && std::string(argv[3]) == "--online");
+            return clijudge::lang::cmdList(online);
+        } else if (subCmd == "switch") {
+            if (argc < 4) {
+                std::cerr << "Usage: clijudge displaylang switch [langname]" << std::endl;
+                return 1;
+            }
+            return clijudge::lang::cmdSwitch(argv[3]);
+        } else if (subCmd == "delete") {
+            if (argc < 4) {
+                std::cerr << "Usage: clijudge displaylang delete [langname]" << std::endl;
+                return 1;
+            }
+            return clijudge::lang::cmdDelete(argv[3]);
+        } else if (subCmd == "pull") {
+            if (argc < 4) {
+                std::cerr << "Usage: clijudge displaylang pull [langname]" << std::endl;
+                return 1;
+            }
+            return clijudge::lang::cmdPull(argv[3]);
+        } else {
+            std::cerr << "Unknown displaylang command: " << subCmd << std::endl;
+            showCommandHelp("displaylang");
             return 1;
         }
     }
