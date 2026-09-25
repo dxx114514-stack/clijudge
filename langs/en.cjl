@@ -32,6 +32,7 @@
       "export": "Export contest to CDF",
       "import": "Import contest from CDF",
       "leaderboard": "View contest leaderboard",
+      "report": "Export contest report (HTML)",
       "problem": "Contest problem",
       "submit": "Submit solution",
       "view_submissions": "View submissions",
@@ -42,7 +43,7 @@
       "count": "Count problems",
       "create": "Create problem",
       "delete": "Delete problem",
-      "edit": "Edit problem",
+      "edit": "Edit problem (same options as create)",
       "export": "Export problem",
       "import": "Import problem",
       "list": "List problems",
@@ -58,7 +59,12 @@
     "submit": {
       "commands": "Submit Commands:",
       "count": "Count submissions",
-      "list": "List submissions"
+      "list": "List submissions",
+      "rejudge": "Rejudge submission"
+    },
+    "ide": {
+      "commands": "IDE Commands:",
+      "run": "Run code"
     },
     "displaylang": {
       "commands": "Display Language Commands:",

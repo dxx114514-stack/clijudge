@@ -32,6 +32,7 @@
       "export": "导出比赛为 CDF 格式",
       "import": "从 CDF 格式导入比赛",
       "leaderboard": "查看比赛排行榜",
+      "report": "导出比赛报告 (HTML)",
       "problem": "比赛题目",
       "submit": "提交解答",
       "view_submissions": "查看提交记录",
@@ -42,7 +43,7 @@
       "count": "统计题目数量",
       "create": "创建题目",
       "delete": "删除题目",
-      "edit": "编辑题目",
+      "edit": "编辑题目（选项与创建相同）",
       "export": "导出题目",
       "import": "导入题目",
       "list": "列出题目",
@@ -58,7 +59,12 @@
     "submit": {
       "commands": "提交命令:",
       "count": "统计提交数量",
-      "list": "列出提交记录"
+      "list": "列出提交记录",
+      "rejudge": "重新评判提交"
+    },
+    "ide": {
+      "commands": "代码运行命令:",
+      "run": "运行代码"
     },
     "displaylang": {
       "commands": "显示语言命令:",
