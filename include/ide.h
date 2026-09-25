@@ -13,6 +13,7 @@
 #include <iostream>
 #include <filesystem>
 #include <cstdlib>
+#include "platform.h"
 #include "sandbox_runner.hpp"
 
 namespace clijudge {
@@ -36,15 +37,19 @@ std::string getRunCommand(const std::string& codePath, const std::string& workDi
 
     if (ext == ".cpp" || ext == ".cc" || ext == ".cxx") {
         // C++ 编译并运行
-        std::string exePath = workDir + "\\output.exe";
+        std::string exePath = platform::pathJoin(workDir, std::string("output") + platform::exeSuffix());
         return "g++ -o \"" + exePath + "\" \"" + codePath + "\" && \"" + exePath + "\"";
     } else if (ext == ".c") {
         // C 编译并运行
-        std::string exePath = workDir + "\\output.exe";
+        std::string exePath = platform::pathJoin(workDir, std::string("output") + platform::exeSuffix());
         return "gcc -o \"" + exePath + "\" \"" + codePath + "\" && \"" + exePath + "\"";
     } else if (ext == ".py") {
         // Python 运行
+#ifdef _WIN32
         return "python \"" + codePath + "\"";
+#else
+        return "python3 \"" + codePath + "\"";
+#endif
     } else if (ext == ".java") {
         // Java 运行
         std::string className = fs::path(codePath).stem().string();
@@ -60,15 +65,11 @@ std::string getRunCommand(const std::string& codePath, const std::string& workDi
 
 // 创建临时工作目录
 std::string createWorkDir() {
-    char tempPath[MAX_PATH];
-    GetTempPathA(MAX_PATH, tempPath);
-
-    char guid[64];
-    GUID g;
-    CoCreateGuid(&g);
-    sprintf_s(guid, "%08X%04X%04X", g.Data1, g.Data2, g.Data3);
-
-    std::string workDir = std::string(tempPath) + "clijudge_ide_" + guid;
+    static unsigned int seq = 0;
+    std::string name = "clijudge_ide_" + std::to_string(platform::pid()) + "_"
+                     + std::to_string(platform::tickMs()) + "_"
+                     + std::to_string(seq++);
+    std::string workDir = platform::pathJoin(platform::tempDir(), name);
     fs::create_directories(workDir);
     return workDir;
 }
@@ -94,7 +95,7 @@ int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
 
     // 创建临时工作目录
     std::string workDir = createWorkDir();
-    std::string metaFile = workDir + "\\_meta.json";
+    std::string metaFile = platform::pathJoin(workDir, "_meta.json");
 
     // 获取运行命令
     std::string runCmd = getRunCommand(codePath, workDir);
@@ -104,15 +105,21 @@ int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
         runCmd = runCmd + " < \"" + inputPath + "\"";
     }
 
-    // 使用沙箱运行
-    std::vector<std::string> args = {runCmd};
+    // 使用沙箱运行（Windows: cmd.exe /c；Linux: sh -c）
+#ifdef _WIN32
+    const char* shellExe = "cmd.exe";
+    std::vector<std::string> shellArgs = {"/c", runCmd};
+#else
+    const char* shellExe = "/bin/sh";
+    std::vector<std::string> shellArgs = {"-c", runCmd};
+#endif
     auto result = clijudge::sandbox_run(
         10000,  // 10秒超时
         256,    // 256MB内存限制
         1,      // 单进程
         metaFile.c_str(),
-        "cmd.exe",
-        {"/c", runCmd},
+        shellExe,
+        shellArgs,
         false
     );
 

@@ -1,15 +1,16 @@
 cmake_minimum_required(VERSION 3.10)
-project(CliJudge)
+project(CliJudge CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 添加include目录
+# include 目录
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# 添加源文�?add_executable(clijudge src/main.cpp)
+# 单翻译单元构建：miniz 通过 include/miniz_impl.h 随 main.cpp 一并编译
+add_executable(clijudge src/main.cpp)
 
-# 链接Windows�?target_link_libraries(clijudge psapi userenv ole32)
-
-# 设置Windows版本
-target_compile_definitions(clijudge PRIVATE WINVER=0x0600 _WIN32_WINNT=0x0600)
+if(WIN32)
+  target_compile_definitions(clijudge PRIVATE WINVER=0x0600 _WIN32_WINNT=0x0600)
+  target_link_libraries(clijudge psapi userenv ole32 winhttp)
+endif()

@@ -3,3 +3,5 @@
 data/
 test_export.cdf
 *.zip
+clijudge
+clijudge_linux

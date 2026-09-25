@@ -22,6 +22,7 @@
 #include <algorithm>
 #include "json.hpp"
 #include "cdf.h"
+#include "platform.h"
 #include "problem.h"
 
 namespace judgelite {
@@ -508,7 +509,7 @@ private:
         time_t now = time(nullptr);
         char buf[64];
         struct tm timeinfo;
-        localtime_s(&timeinfo, &now);
+        clijudge::platform::localTime(&now, &timeinfo);
         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
         return std::string(buf);
     }

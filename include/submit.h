@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <filesystem>
 #include "json.hpp"
+#include "platform.h"
 
 namespace clijudge {
 namespace submit {
@@ -187,7 +188,7 @@ inline std::string getCurrentTime() {
     time_t now = time(nullptr);
     char buf[64];
     struct tm timeinfo;
-    localtime_s(&timeinfo, &now);
+    clijudge::platform::localTime(&now, &timeinfo);
     strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
     return std::string(buf);
 }

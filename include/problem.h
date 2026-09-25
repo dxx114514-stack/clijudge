@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <cstring>
 #include "json.hpp"
+#include "platform.h"
 #include "sandbox_runner.hpp"
 #include "submit.h"
 #include "judge.h"
@@ -471,7 +472,7 @@ private:
         time_t now = time(nullptr);
         char buf[64];
         struct tm timeinfo;
-        localtime_s(&timeinfo, &now);
+        clijudge::platform::localTime(&now, &timeinfo);
         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
         return std::string(buf);
     }
@@ -510,7 +511,7 @@ inline std::string readFileContent(const std::string& path) {
 inline std::string getCurrentTimeISO() {
     time_t now = time(nullptr);
     struct tm timeinfo;
-    localtime_s(&timeinfo, &now);
+    clijudge::platform::localTime(&now, &timeinfo);
     char buf[64];
     strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &timeinfo);
     return std::string(buf);

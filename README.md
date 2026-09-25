@@ -72,9 +72,19 @@ cmake --build .
 
 ### 使用g++直接编译
 
+Windows:
+
 ```bash
-g++ -std=c++17 -O2 -o judgelite.exe src/main.cpp -lpsapi -luserenv -l ole32
+g++ -std=c++17 -O2 -static -I include -o clijudge.exe src/main.cpp -lpsapi -luserenv -lole32 -lwinhttp
 ```
+
+Linux:
+
+```bash
+g++ -std=c++17 -O2 -I include -o clijudge src/main.cpp
+```
+
+Linux 下语言包联网下载依赖 `curl`（`displaylang` 命令）。
 
 ## 使用方法
 
@@ -100,12 +110,13 @@ judgelite.exe contest create "比赛标题" "2026-01-01 10:00:00" "2026-01-01 12
 
 ## 数据存储
 
-数据默认存储在可执行文件同级目录的 `data/` 文件夹下，可通过环境变量 `JUDGELITE_DATA_DIR` 自定义。
+数据默认存储在可执行文件同级目录的 `data/` 文件夹下，可通过环境变量 `CLIJUDGE_DATA_DIR`（兼容旧名 `JUDGELITE_DATA_DIR`）自定义。
 
 ## 系统要求
 
-- Windows Vista 或更高版本
+- Windows Vista 或更高版本 / Linux（glibc）
 - 支持C++17的编译器
+- Linux 判题运行环境需 `g++`/`gcc`（编译选手代码）
 
 ## 许可证
 

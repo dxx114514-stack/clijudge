@@ -2,9 +2,11 @@
 #define CLIJUDGE_SANDBOX_RUNNER_HPP
 
 // sandbox_runner.hpp
-// CLIJudge 安全沙箱运行器 — 基于 Windows Job Object + 受限令牌
+// CLIJudge 安全沙箱运行器
+//   Windows: Job Object + 受限令牌
+//   Linux:   fork + setrlimit + 进程组监控
 //
-// 安全特性:
+// Windows 安全特性:
 //   1. CREATE_SUSPENDED 创建进程，绑定 Job 后再 ResumeThread，杜绝竞态逃逸
 //   2. JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE — Job 关闭则整棵进程树被系统秒杀
 //   3. 禁用 BREAKAWAY — 子进程无法脱离沙箱
@@ -14,12 +16,20 @@
 //   7. CPU 时间限制 — Job Object per-job user time limit + 轮询
 //   8. 低完整性级别 — 禁止向高完整性对象写入
 //
-// 编译: g++ -O2 -static -o clijudge.exe main.cpp -lpsapi -luserenv
+// 编译: g++ -O2 -static -o clijudge src/main.cpp -lpsapi -luserenv (仅 Windows 需链接库)
 // 用法: 通过 main.cpp 调用 sandbox_run() 函数
 
+#ifdef _WIN32
+
+#ifndef WINVER
 #define WINVER 0x0600
+#endif
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0600
+#endif
+#ifndef NTDDI_VERSION
 #define NTDDI_VERSION 0x06000000
+#endif
 #include <windows.h>
 #include <psapi.h>
 #include <aclapi.h>
@@ -552,5 +562,213 @@ inline SandboxResult sandbox_run(
 }
 
 } // namespace clijudge
+
+#else // ────────────────────────── Linux / POSIX 分支 ──────────────────────────
+
+#include <unistd.h>
+#include <signal.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
+#include <chrono>
+#include <string>
+#include <vector>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+
+// glibc 暴露 wait4（可拿到单个子进程的 rusage），但 -std=c++17 严格模式下
+// <sys/wait.h> 不声明它，这里手动声明（musl/glibc 均导出该符号）。
+extern "C" pid_t wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage);
+
+namespace clijudge {
+
+// ── 沙箱运行结果结构（与 Windows 分支字段一致）──────────────
+struct SandboxResult {
+    int exitCode;
+    unsigned int timeUsedMs;
+    size_t memoryUsedKB;
+    const char* signal;
+    bool success;
+};
+
+// ── 写元数据 JSON 到文件（格式与 Windows 分支完全一致）──────
+inline void ensureMetaPath(const char* path) {
+    std::error_code ec;
+    if (std::filesystem::is_directory(path, ec))
+        std::filesystem::remove_all(path, ec);
+}
+
+inline void writeMeta(const char* path, int exitCode, unsigned int timeMs, size_t memKB, const char* signal) {
+    ensureMetaPath(path);
+    FILE* f = fopen(path, "w");
+    if (!f) return;
+    std::string sig(signal ? signal : "");
+    std::string esc;
+    for (char c : sig) {
+        if (c == '"' || c == '\\') esc += '\\';
+        esc += c;
+    }
+    fprintf(f, "{\"exit_code\":%d,\"time_used\":%lu,\"memory_used\":%llu,\"signal\":\"%s\"}",
+            exitCode, (unsigned long)timeMs, (unsigned long long)memKB, esc.c_str());
+    fclose(f);
+}
+
+// ── 读取 /proc/<pid>/status 的 VmHWM（峰值 RSS, kB）─────────
+inline size_t readVmHwmKB(pid_t pid) {
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%d/status", (int)pid);
+    FILE* f = fopen(path, "r");
+    if (!f) return 0;
+    char line[256];
+    size_t kb = 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "VmHWM:", 6) == 0) {
+            kb = (size_t)strtoull(line + 6, nullptr, 10);
+            break;
+        }
+    }
+    fclose(f);
+    return kb;
+}
+
+// ── 主运行函数（签名与 Windows 分支一致）────────────────────
+// 隔离手段: 独立进程组 + setrlimit(CPU/AS/CORE) + 轮询 VmHWM/墙钟
+// 说明: maxProcesses 在 Linux 上无法不依赖 cgroup 可靠地按进程树限制，
+//       此处不生效（预留参数，保持签名一致）。
+inline SandboxResult sandbox_run(
+    unsigned int timeLimitMs,
+    size_t memLimitMB,
+    unsigned int maxProcesses,
+    const char* metaFile,
+    const char* exePath,
+    const std::vector<std::string>& args = {},
+    bool fileIoMode = false
+) {
+    SandboxResult result = { 0, 0, 0, "null", false };
+    (void)maxProcesses;
+    (void)fileIoMode;
+
+    const size_t memLimitKB = memLimitMB * 1024;
+    // RLIMIT_AS 留出富余，作为轮询间隙内疯狂分配的主机保护兜底；
+    // 精确的 MLE 判定仍以 VmHWM 轮询（以及回收时 ru_maxrss 复核）为准。
+    const rlim_t asBackstopBytes =
+        memLimitMB > 0 ? (rlim_t)memLimitMB * 1024 * 1024 * 2 : (rlim_t)0;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        writeMeta(metaFile, -1, 0, 0, "SYSTEM_ERROR");
+        return result;
+    }
+
+    if (pid == 0) {
+        // 独立进程组：超时/OOM 时父进程 kill(-pid) 可整组击杀
+        setpgid(0, 0);
+
+        struct rlimit rl;
+        if (timeLimitMs > 0) {
+            // CPU 时间兜底（软限），超出触发 SIGXCPU；墙钟轮询通常先命中
+            rl.rlim_cur = rl.rlim_max = (timeLimitMs + 999) / 1000 + 1;
+            setrlimit(RLIMIT_CPU, &rl);
+        }
+        if (asBackstopBytes > 0) {
+            rl.rlim_cur = rl.rlim_max = asBackstopBytes;
+            setrlimit(RLIMIT_AS, &rl);
+        }
+        rl.rlim_cur = rl.rlim_max = 0;
+        setrlimit(RLIMIT_CORE, &rl);
+
+        std::vector<std::string> storage;
+        storage.reserve(1 + args.size());
+        storage.push_back(exePath);
+        storage.insert(storage.end(), args.begin(), args.end());
+        std::vector<char*> argv;
+        argv.reserve(storage.size() + 1);
+        for (auto& s : storage) argv.push_back(&s[0]);
+        argv.push_back(nullptr);
+
+        execv(exePath, argv.data());
+        _exit(127); // exec 失败
+    }
+
+    // 父进程兜底设置进程组（防子进程先于 setpgid 退出的竞态无害）
+    setpgid(pid, pid);
+
+    auto start = std::chrono::steady_clock::now();
+    int status = 0;
+    struct rusage ru;
+    memset(&ru, 0, sizeof(ru));
+
+    bool exited = false, timedOut = false, oom = false;
+    size_t peakKB = 0;
+
+    while (true) {
+        pid_t w = wait4(pid, &status, WNOHANG, &ru);
+        if (w == pid) { exited = true; break; }
+
+        auto now = std::chrono::steady_clock::now();
+        unsigned int elapsed =
+            (unsigned int)std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+
+        if (timeLimitMs > 0 && elapsed >= timeLimitMs) {
+            timedOut = true;
+            break;
+        }
+
+        size_t hwm = readVmHwmKB(pid);
+        if (hwm > peakKB) peakKB = hwm;
+        if (memLimitKB > 0 && hwm > memLimitKB) {
+            oom = true;
+            break;
+        }
+
+        usleep(10 * 1000); // 10ms
+    }
+
+    // 超时/OOM: 击杀整个进程组并收割
+    if (timedOut || oom) {
+        kill(-pid, SIGKILL);
+        wait4(pid, &status, 0, &ru);
+    }
+
+    // 回收时的 rusage 复核（覆盖轮询间隙超限后进程自行退出的场景）
+    if ((size_t)ru.ru_maxrss > peakKB) peakKB = (size_t)ru.ru_maxrss;
+
+    // SIGXCPU（CPU 软限触发）视为超时
+    if (!timedOut && !oom && WIFSIGNALED(status) && WTERMSIG(status) == SIGXCPU)
+        timedOut = true;
+
+    // 轮询间隙内超过内存限制但进程已自行退出 → 补判 MLE
+    if (!oom && memLimitKB > 0 && peakKB > memLimitKB)
+        oom = true;
+
+    int exitCode = 0;
+    if (exited) {
+        if (WIFEXITED(status)) exitCode = WEXITSTATUS(status);
+        else if (WIFSIGNALED(status)) exitCode = 128 + WTERMSIG(status);
+    }
+
+    unsigned int timeUsed = (unsigned int)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+
+    const char* signal = "null";
+    if (oom) signal = "MEMORY_LIMIT";
+    else if (timedOut) signal = "SIGKILL";
+
+    writeMeta(metaFile, exitCode, timeUsed, peakKB, signal);
+
+    result.exitCode = exitCode;
+    result.timeUsedMs = timeUsed;
+    result.memoryUsedKB = peakKB;
+    result.signal = signal;
+    result.success = true;
+    return result;
+}
+
+} // namespace clijudge
+
+#endif // _WIN32
 
 #endif // CLIJUDGE_SANDBOX_RUNNER_HPP

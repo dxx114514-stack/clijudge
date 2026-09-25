@@ -5,6 +5,9 @@
 // 编码转换工具
 
 #include <string>
+
+#ifdef _WIN32
+
 #include <windows.h>
 
 namespace clijudge {
@@ -54,5 +57,51 @@ inline std::string utf8ToGbk(const std::string& utf8) {
 
 } // namespace encoding
 } // namespace clijudge
+
+#else // ────────────────────────── Linux: iconv ──────────────────────────
+
+#include <iconv.h>
+#include <cstring>
+#include <vector>
+
+namespace clijudge {
+namespace encoding {
+
+namespace {
+
+// 通用 iconv 转换
+inline std::string iconvConvert(const char* to, const char* from, const std::string& in) {
+    if (in.empty()) return "";
+    iconv_t cd = iconv_open(to, from);
+    if (cd == (iconv_t)-1) return "";
+    
+    std::vector<char> out(in.size() * 4 + 16, '\0');
+    char* inPtr = const_cast<char*>(in.data());
+    size_t inLeft = in.size();
+    char* outPtr = out.data();
+    size_t outLeft = out.size();
+    
+    size_t rc = iconv(cd, &inPtr, &inLeft, &outPtr, &outLeft);
+    iconv_close(cd);
+    if (rc == (size_t)-1 && outPtr == out.data()) return "";
+    return std::string(out.data(), out.size() - outLeft);
+}
+
+} // namespace
+
+// GBK 转 UTF-8
+inline std::string gbkToUtf8(const std::string& gbk) {
+    return iconvConvert("UTF-8//IGNORE", "GBK", gbk);
+}
+
+// UTF-8 转 GBK
+inline std::string utf8ToGbk(const std::string& utf8) {
+    return iconvConvert("GBK//IGNORE", "UTF-8", utf8);
+}
+
+} // namespace encoding
+} // namespace clijudge
+
+#endif // _WIN32
 
 #endif // CLIJUDGE_ENCODING_H

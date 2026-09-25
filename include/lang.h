@@ -17,10 +17,16 @@
 #include <iostream>
 #include <filesystem>
 #include <cstdlib>
+#include <cctype>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#ifdef _WIN32
 #include <winhttp.h>
-#include "json.hpp"
-
 #pragma comment(lib, "winhttp.lib")
+#endif
+#include "json.hpp"
+#include "platform.h"
 
 namespace clijudge {
 namespace lang {
@@ -35,21 +41,27 @@ const std::string LANGS_BRANCH = "languages";
 
 // 获取 exe 所在目录
 inline std::string getExeDir() {
-    char exePath[MAX_PATH];
-    if (GetModuleFileNameA(NULL, exePath, MAX_PATH)) {
-        return fs::path(exePath).parent_path().string();
-    }
-    return ".";
+    return platform::exeDir();
 }
 
 // 获取语言文件目录
 inline std::string getLangsDir() {
-    return getExeDir() + "\\data\\langs";
+    return platform::pathJoin(platform::pathJoin(getExeDir(), "data"), "langs");
 }
 
 // 获取配置文件路径
 inline std::string getConfigPath() {
-    return getExeDir() + "\\data\\config.json";
+    return platform::pathJoin(platform::pathJoin(getExeDir(), "data"), "config.json");
+}
+
+// 语言名白名单（防路径穿越与 URL/shell 注入）
+inline bool validLangName(const std::string& name) {
+    if (name.empty() || name.size() > 64) return false;
+    if (name == "." || name == "..") return false;
+    for (char c : name) {
+        if (!isalnum((unsigned char)c) && c != '-' && c != '_' && c != '.') return false;
+    }
+    return true;
 }
 
 // 确保目录存在
@@ -57,6 +69,52 @@ inline void ensureDir(const std::string& dir) {
     if (!fs::exists(dir)) {
         fs::create_directories(dir);
     }
+}
+
+// UTF-16（按 BOM 指定的字节序）转 UTF-8（字节级实现，跨平台一致）
+inline std::string utf16ToUtf8(const char* data, size_t bytes, bool bigEndian) {
+    auto unit = [&](size_t idx) -> uint16_t {
+        unsigned char a = (unsigned char)data[idx];
+        unsigned char b = (unsigned char)data[idx + 1];
+        return bigEndian ? (uint16_t)((a << 8) | b) : (uint16_t)((b << 8) | a);
+    };
+    std::string out;
+    size_t i = 0;
+    while (i + 1 < bytes) {
+        uint16_t u = unit(i);
+        i += 2;
+        uint32_t cp;
+        if (u >= 0xD800 && u <= 0xDBFF) {
+            if (i + 1 >= bytes) break;
+            uint16_t lo = unit(i);
+            if (lo >= 0xDC00 && lo <= 0xDFFF) {
+                cp = 0x10000u + ((((uint32_t)u - 0xD800u) << 10) | ((uint32_t)lo - 0xDC00u));
+                i += 2;
+            } else {
+                cp = 0xFFFD;
+            }
+        } else if (u >= 0xDC00 && u <= 0xDFFF) {
+            cp = 0xFFFD;
+        } else {
+            cp = u;
+        }
+        if (cp < 0x80) {
+            out += (char)cp;
+        } else if (cp < 0x800) {
+            out += (char)(0xC0 | (cp >> 6));
+            out += (char)(0x80 | (cp & 0x3F));
+        } else if (cp < 0x10000) {
+            out += (char)(0xE0 | (cp >> 12));
+            out += (char)(0x80 | ((cp >> 6) & 0x3F));
+            out += (char)(0x80 | (cp & 0x3F));
+        } else {
+            out += (char)(0xF0 | (cp >> 18));
+            out += (char)(0x80 | ((cp >> 12) & 0x3F));
+            out += (char)(0x80 | ((cp >> 6) & 0x3F));
+            out += (char)(0x80 | (cp & 0x3F));
+        }
+    }
+    return out;
 }
 
 // 读取文件内容并转换为 UTF-8
@@ -79,28 +137,13 @@ inline std::string readFile(const std::string& path) {
         (unsigned char)raw[0] == 0xFF &&
         (unsigned char)raw[1] == 0xFE) {
         // UTF-16 LE BOM, 转换为 UTF-8
-        const wchar_t* wstr = reinterpret_cast<const wchar_t*>(raw.data() + 2);
-        int wlen = (int)((raw.size() - 2) / sizeof(wchar_t));
-        int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr, wlen, nullptr, 0, nullptr, nullptr);
-        if (utf8Len <= 0) return "";
-        std::string utf8Str(utf8Len, '\0');
-        WideCharToMultiByte(CP_UTF8, 0, wstr, wlen, &utf8Str[0], utf8Len, nullptr, nullptr);
-        return utf8Str;
+        return utf16ToUtf8(raw.data() + 2, raw.size() - 2, false);
     }
     if (raw.size() >= 2 &&
         (unsigned char)raw[0] == 0xFE &&
         (unsigned char)raw[1] == 0xFF) {
-        // UTF-16 BE BOM, 先转 LE 再转 UTF-8
-        for (size_t i = 2; i + 1 < raw.size(); i += 2) {
-            std::swap(raw[i], raw[i + 1]);
-        }
-        const wchar_t* wstr = reinterpret_cast<const wchar_t*>(raw.data() + 2);
-        int wlen = (int)((raw.size() - 2) / sizeof(wchar_t));
-        int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr, wlen, nullptr, 0, nullptr, nullptr);
-        if (utf8Len <= 0) return "";
-        std::string utf8Str(utf8Len, '\0');
-        WideCharToMultiByte(CP_UTF8, 0, wstr, wlen, &utf8Str[0], utf8Len, nullptr, nullptr);
-        return utf8Str;
+        // UTF-16 BE BOM, 转换为 UTF-8
+        return utf16ToUtf8(raw.data() + 2, raw.size() - 2, true);
     }
     // 无 BOM, 按 UTF-8 返回
     return raw;
@@ -141,6 +184,7 @@ inline std::string getCurrentLang() {
 }
 
 // 通过 HTTP GET 获取内容
+#ifdef _WIN32
 inline std::string httpGet(const std::string& url) {
     // 手动解析 URL: https://host/path
     std::string host, path;
@@ -242,6 +286,27 @@ inline std::string httpGet(const std::string& url) {
     
     return response;
 }
+#else
+// Linux: 通过 curl 获取（curl 在各发行版上均为常见基础组件）
+inline std::string httpGet(const std::string& url) {
+    // URL 将拼入 shell 命令，先做白名单校验（防止注入）
+    for (char c : url) {
+        bool ok = (unsigned char)c < 0x80 &&
+                  (isalnum((unsigned char)c) || std::strchr(":/._-~?&=%+", c) != nullptr);
+        if (!ok) return "";
+    }
+    std::string cmd = "curl -fsSL --max-time 30 '" + url + "'";
+    FILE* p = popen(cmd.c_str(), "r");
+    if (!p) return "";
+    std::string out;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), p)) > 0) out.append(buf, n);
+    int rc = pclose(p);
+    if (rc != 0) return "";
+    return out;
+}
+#endif
 
 // 获取在线语言列表
 inline json getOnlineLangs() {
@@ -275,6 +340,10 @@ inline json getOnlineLangs() {
 
 // 下载语言文件
 inline bool downloadLang(const std::string& langName) {
+    if (!validLangName(langName)) {
+        std::cerr << "Invalid language name: " << langName << std::endl;
+        return false;
+    }
     std::string url = "https://raw.githubusercontent.com/" + REPO_OWNER + "/" + REPO_NAME + 
                       "/" + LANGS_BRANCH + "/langs/" + langName + ".cjl";
     
@@ -284,7 +353,7 @@ inline bool downloadLang(const std::string& langName) {
         return false;
     }
     
-    std::string path = getLangsDir() + "\\" + langName + ".cjl";
+    std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
     if (!writeFile(path, content)) {
         std::cerr << "Failed to save language file: " << langName << std::endl;
         return false;
@@ -295,7 +364,8 @@ inline bool downloadLang(const std::string& langName) {
 
 // 加载语言文件
 inline json loadLang(const std::string& langName) {
-    std::string path = getLangsDir() + "\\" + langName + ".cjl";
+    if (!validLangName(langName)) return nullptr;
+    std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
     std::string content = readFile(path);
     if (content.empty()) {
         return nullptr;
@@ -390,7 +460,7 @@ inline int cmdSwitch(const std::string& langName) {
     }
     
     // 检查本地是否已有
-    std::string path = getLangsDir() + "\\" + langName + ".cjl";
+    std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
     if (!fs::exists(path)) {
         std::cout << "Language '" << langName << "' not found locally. Downloading..." << std::endl;
         if (!downloadLang(langName)) {
@@ -426,8 +496,12 @@ inline int cmdDelete(const std::string& langName) {
         std::cerr << "Usage: clijudge displaylang delete [langname]" << std::endl;
         return 1;
     }
+    if (!validLangName(langName)) {
+        std::cerr << "Invalid language name: " << langName << std::endl;
+        return 1;
+    }
     
-    std::string path = getLangsDir() + "\\" + langName + ".cjl";
+    std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
     if (!fs::exists(path)) {
         std::cerr << "Language file not found: " << langName << std::endl;
         return 1;

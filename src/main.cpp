@@ -49,6 +49,7 @@
 #include <cstring>
 #include <filesystem>
 #include "json.hpp"
+#include "platform.h"
 #include "miniz_impl.h"
 #include "article.h"
 #include "contest.h"
@@ -63,19 +64,21 @@ namespace fs = std::filesystem;
 // 默认数据目录
 std::string getDataDir() {
     // 优先使用环境变量
-    const char* dataDir = getenv("JUDGELITE_DATA_DIR");
+    const char* dataDir = getenv("CLIJUDGE_DATA_DIR");
+    if (!dataDir || !dataDir[0]) {
+        dataDir = getenv("JUDGELITE_DATA_DIR"); // 兼容旧变量名
+    }
     if (dataDir && dataDir[0]) {
         return std::string(dataDir);
     }
 
     // 使用可执行文件所在目录
-    char exePath[MAX_PATH];
-    if (GetModuleFileNameA(NULL, exePath, MAX_PATH)) {
-        std::string exeDir = fs::path(exePath).parent_path().string();
-        return exeDir + "\\data";
+    std::string exeDir = clijudge::platform::exeDir();
+    if (!exeDir.empty() && exeDir != ".") {
+        return clijudge::platform::pathJoin(exeDir, "data");
     }
 
-    return ".\\data";
+    return clijudge::platform::pathJoin(".", "data");
 }
 
 // 显示帮助信息

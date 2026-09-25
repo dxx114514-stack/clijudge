@@ -27,7 +27,13 @@
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
 #include "json.hpp"
+#include "platform.h"
 #include "sandbox_runner.hpp"
 
 namespace clijudge {
@@ -138,9 +144,18 @@ inline std::string trimLineEnd(const std::string& s) {
 
 // ── 比较函数 ─────────────────────────────────────────────────
 
-// 严格文本比较
+// 严格文本比较（CRLF/LF 统一为 LF，消除 Windows/Linux 换行差异）
 inline bool compareTextStrict(const std::string& expected, const std::string& actual) {
-    return expected == actual;
+    auto normalizeEol = [](const std::string& s) {
+        std::string r;
+        r.reserve(s.size());
+        for (size_t i = 0; i < s.size(); i++) {
+            if (s[i] == '\r' && i + 1 < s.size() && s[i + 1] == '\n') continue;
+            r += s[i];
+        }
+        return r;
+    };
+    return normalizeEol(expected) == normalizeEol(actual);
 }
 
 // 逐行比较（忽略行末空白）
@@ -252,25 +267,27 @@ inline bool compareSpecialJudge(const std::string& spjExe,
     if (spjExe.empty() || !fs::exists(spjExe)) return false;
     
     // 创建临时目录用于 SPJ
-    char tempPath[MAX_PATH];
-    GetTempPathA(MAX_PATH, tempPath);
-    std::string workDir = std::string(tempPath) + "clijudge_spj_" + std::to_string(GetCurrentProcessId());
+    std::string workDir = clijudge::platform::pathJoin(
+        clijudge::platform::tempDir(),
+        "clijudge_spj_" + std::to_string(clijudge::platform::pid()));
     fs::create_directories(workDir);
     
     // 写入临时文件
-    writeFileContent(workDir + "\\input.txt", inputData);
-    writeFileContent(workDir + "\\output.txt", expectedOutput);
-    writeFileContent(workDir + "\\answer.txt", actualOutput);
+    writeFileContent(platform::pathJoin(workDir, "input.txt"), inputData);
+    writeFileContent(platform::pathJoin(workDir, "output.txt"), expectedOutput);
+    writeFileContent(platform::pathJoin(workDir, "answer.txt"), actualOutput);
     
     // 运行 SPJ
-    std::string metaFile = workDir + "\\_meta.json";
+    std::string metaFile = platform::pathJoin(workDir, "_meta.json");
     auto result = clijudge::sandbox_run(
         5000,   // 5秒超时
         256,    // 256MB 内存
         1,
         metaFile.c_str(),
         spjExe.c_str(),
-        {workDir + "\\input.txt", workDir + "\\output.txt", workDir + "\\answer.txt"},
+        {platform::pathJoin(workDir, "input.txt"),
+         platform::pathJoin(workDir, "output.txt"),
+         platform::pathJoin(workDir, "answer.txt")},
         false
     );
     
@@ -330,13 +347,14 @@ inline TestCaseResult judgeTestCase(
     }
     
     // 创建临时目录
-    char tempPath[MAX_PATH];
-    GetTempPathA(MAX_PATH, tempPath);
-    std::string workDir = std::string(tempPath) + "clijudge_tc_" + std::to_string(tcId) + "_" + std::to_string(GetCurrentProcessId());
+    std::string workDir = platform::pathJoin(
+        platform::tempDir(),
+        "clijudge_tc_" + std::to_string(tcId) + "_" + std::to_string(platform::pid()));
     fs::create_directories(workDir);
     
-    std::string metaFile = workDir + "\\_meta.json";
+    std::string metaFile = platform::pathJoin(workDir, "_meta.json");
     
+#ifdef _WIN32
     // 创建管道用于 stdin/stdout
     HANDLE hStdinRead = NULL, hStdinWrite = NULL;
     HANDLE hStdoutRead = NULL, hStdoutWrite = NULL;
@@ -418,6 +436,75 @@ inline TestCaseResult judgeTestCase(
     CloseHandle(hStdinRead);
     CloseHandle(hStdoutRead);
     CloseHandle(hStderrRead);
+#else
+    // POSIX: 用文件重定向 stdin/stdout/stderr（无管道写满死锁问题）
+    std::string inFile = platform::pathJoin(workDir, "_stdin.txt");
+    std::string outFile = platform::pathJoin(workDir, "_stdout.txt");
+    std::string errFile = platform::pathJoin(workDir, "_stderr.txt");
+    
+    {
+        std::ofstream fi(inFile, std::ios::binary);
+        fi.write(inputData.data(), (std::streamsize)inputData.size());
+    }
+    
+    int fdIn = open(inFile.c_str(), O_RDONLY);
+    int fdOut = open(outFile.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fdErr = open(errFile.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fdIn < 0 || fdOut < 0 || fdErr < 0) {
+        if (fdIn >= 0) close(fdIn);
+        if (fdOut >= 0) close(fdOut);
+        if (fdErr >= 0) close(fdErr);
+        result.message = "Failed to open redirect files";
+        try { fs::remove_all(workDir); } catch (...) {}
+        return result;
+    }
+    
+    int savedIn = dup(STDIN_FILENO);
+    int savedOut = dup(STDOUT_FILENO);
+    int savedErr = dup(STDERR_FILENO);
+    dup2(fdIn, STDIN_FILENO);
+    dup2(fdOut, STDOUT_FILENO);
+    dup2(fdErr, STDERR_FILENO);
+    close(fdIn);
+    close(fdOut);
+    close(fdErr);
+    
+    auto sandboxResult = clijudge::sandbox_run(
+        timeLimitMs,
+        memoryLimitMB,
+        1,
+        metaFile.c_str(),
+        absExePath.c_str(),
+        {},
+        false
+    );
+    
+    // 恢复标准描述符
+    dup2(savedIn, STDIN_FILENO);
+    dup2(savedOut, STDOUT_FILENO);
+    dup2(savedErr, STDERR_FILENO);
+    close(savedIn);
+    close(savedOut);
+    close(savedErr);
+    
+    // 读取输出文件
+    std::string actualOutput;
+    {
+        std::ifstream fo(outFile, std::ios::binary);
+        std::ostringstream ss;
+        ss << fo.rdbuf();
+        actualOutput = ss.str();
+    }
+    
+    // 读取 stderr 输出（用于调试）
+    std::string stderrOutput;
+    {
+        std::ifstream fe(errFile, std::ios::binary);
+        std::ostringstream ss;
+        ss << fe.rdbuf();
+        stderrOutput = ss.str();
+    }
+#endif
     
     // 读取元数据
     if (fs::exists(metaFile)) {
@@ -498,14 +585,24 @@ inline std::string getLanguageName(const std::string& ext) {
 
 // 获取可执行文件扩展名
 inline std::string getExeExtension() {
-    return ".exe";
+    return platform::exeSuffix();
 }
 
-// 检查是否为可执行文件
+// 检查是否为可执行文件（按扩展名，Windows）
 inline bool isExecutable(const std::string& path) {
     std::string ext = fs::path(path).extension().string();
     return ext == ".exe" || ext == ".com" || ext == ".bat" || ext == ".cmd";
 }
+
+#ifndef _WIN32
+// 检查是否为 ELF 可执行文件（Linux 上按文件头判断）
+inline bool isElfExecutable(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    char m[4] = { 0, 0, 0, 0 };
+    f.read(m, 4);
+    return f.gcount() == 4 && m[0] == '\x7f' && m[1] == 'E' && m[2] == 'L' && m[3] == 'F';
+}
+#endif
 
 // 检查是否为脚本语言
 inline bool isScript(const std::string& ext) {
@@ -540,23 +637,33 @@ inline CompileResult compileSource(const std::string& sourcePath, const std::str
     // 编译命令
     std::string compileCmd;
     std::string absSourcePath = fs::absolute(sourcePath).string();
-    std::string exePath = workDir + "\\output" + getExeExtension();
+    std::string exePath = platform::pathJoin(workDir, "output" + getExeExtension());
+    std::string staticFlag = platform::staticLinkFlag();
     
     if (ext == ".cpp" || ext == ".cc" || ext == ".cxx") {
-        compileCmd = "g++ -O2 -static -o \"" + exePath + "\" \"" + absSourcePath + "\"";
+        compileCmd = "g++ -O2" + staticFlag + " -o \"" + exePath + "\" \"" + absSourcePath + "\"";
     } else if (ext == ".c") {
-        compileCmd = "gcc -O2 -static -o \"" + exePath + "\" \"" + absSourcePath + "\"";
+        compileCmd = "gcc -O2" + staticFlag + " -o \"" + exePath + "\" \"" + absSourcePath + "\"";
     } else if (ext == ".java") {
         // Java 编译到工作目录
         compileCmd = "javac -d \"" + workDir + "\" \"" + absSourcePath + "\"";
-        exePath = workDir + "\\" + fs::path(absSourcePath).stem().string() + ".class";
+        exePath = platform::pathJoin(workDir, fs::path(absSourcePath).stem().string() + ".class");
     } else {
         result.error = "Unsupported language: " + ext;
         return result;
     }
     
     // 执行编译
-    int compileExitCode = system(compileCmd.c_str());
+    int compileStatus = system(compileCmd.c_str());
+    int compileExitCode;
+#ifdef _WIN32
+    compileExitCode = compileStatus;
+#else
+    // POSIX 的 system() 返回 wait 状态而非退出码
+    if (compileStatus == -1) compileExitCode = -1;
+    else if (WIFEXITED(compileStatus)) compileExitCode = WEXITSTATUS(compileStatus);
+    else compileExitCode = 1;
+#endif
     
     // 检查编译结果
     if (compileExitCode != 0) {
@@ -567,7 +674,7 @@ inline CompileResult compileSource(const std::string& sourcePath, const std::str
     // 验证编译产物存在
     if (ext == ".java") {
         // Java: 检查 .class 文件
-        std::string classFile = workDir + "\\" + fs::path(sourcePath).stem().string() + ".class";
+        std::string classFile = platform::pathJoin(workDir, fs::path(sourcePath).stem().string() + ".class");
         if (!fs::exists(classFile)) {
             result.error = "Compilation produced no output";
             return result;
@@ -602,9 +709,9 @@ inline JudgeResult judgeSubmission(
     result.maxMemoryKB = 0;
     
     // 创建临时工作目录
-    char tempPath[MAX_PATH];
-    GetTempPathA(MAX_PATH, tempPath);
-    std::string workDir = std::string(tempPath) + "clijudge_judge_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(GetTickCount());
+    std::string workDir = platform::pathJoin(
+        platform::tempDir(),
+        "clijudge_judge_" + std::to_string(platform::pid()) + "_" + std::to_string(platform::tickMs()));
     fs::create_directories(workDir);
     
     std::string exeToRun = filePath;
@@ -614,7 +721,14 @@ inline JudgeResult judgeSubmission(
     std::string ext = fs::path(filePath).extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
     
-    if (!isExecutable(ext)) {
+    bool treatAsExecutable;
+#ifdef _WIN32
+    treatAsExecutable = isExecutable(filePath);
+#else
+    treatAsExecutable = isElfExecutable(filePath);
+#endif
+    
+    if (!treatAsExecutable) {
         // 是源代码，需要编译
         CompileResult compileResult = compileSource(filePath, workDir);
         if (!compileResult.success) {
