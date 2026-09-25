@@ -18,6 +18,11 @@
 //       submit [文件地址]            提交题目
 //       view                         查看题目
 //     view [编号]                    查看比赛
+//     list                           列出比赛
+//     leaderboard [编号]             比赛排名
+//     report [编号] [out.html]       导出比赛报告 (HTML)
+//     import [cdf路径]               导入 CDF 比赛
+//     export [编号] [cdf路径]        导出 CDF 比赛
 //
 //   ide
 //     run [代码路径] [in文件路径]    运行代码
@@ -42,6 +47,7 @@
 //   submit
 //     count                          统计提交数量
 //     list [L=1] [R=50]              列出提交记录
+//     rejudge [提交编号]             重新评判提交
 
 #include <iostream>
 #include <string>
@@ -113,6 +119,7 @@ void showCommandHelp(const std::string& command) {
         std::cout << "  export [id] [cdf_path]         Export contest to CDF" << std::endl;
         std::cout << "  import [cdf_path]              Import contest from CDF" << std::endl;
         std::cout << "  leaderboard [id]               View contest leaderboard" << std::endl;
+        std::cout << "  report [id] [out_html]         Export contest report (HTML)" << std::endl;
         std::cout << "  problem [id] [prob_index]      Contest problem" << std::endl;
         std::cout << "    submit [file] [--as user]    Submit solution" << std::endl;
         std::cout << "    view                         View submissions" << std::endl;
@@ -124,8 +131,11 @@ void showCommandHelp(const std::string& command) {
         std::cout << "Problem Commands:" << std::endl;
         std::cout << "  count                          Count problems" << std::endl;
         std::cout << "  create [title]                 Create problem" << std::endl;
+        std::cout << "    options: -type -compare -spj-code -spj-exe -float-abs -float-rel" << std::endl;
+        std::cout << "             -subtask-mode -answer-ext -source-name -dependence" << std::endl;
+        std::cout << "             -interactor -grader -background -describe -exampleio" << std::endl;
         std::cout << "  delete [id]                    Delete problem" << std::endl;
-        std::cout << "  edit [id]                      Edit problem" << std::endl;
+        std::cout << "  edit [id]                      Edit problem (same options as create)" << std::endl;
         std::cout << "  export [zip_path]              Export problem" << std::endl;
         std::cout << "  import [zip_path]              Import problem" << std::endl;
         std::cout << "  list [L=1] [R=50]              List problems" << std::endl;
@@ -141,6 +151,7 @@ void showCommandHelp(const std::string& command) {
         std::cout << "Submit Commands:" << std::endl;
         std::cout << "  count                          Count submissions" << std::endl;
         std::cout << "  list [L=1] [R=50]              List submissions" << std::endl;
+        std::cout << "  rejudge [id]                   Rejudge submission" << std::endl;
     } else if (command == "displaylang") {
         std::cout << "Display Language Commands:" << std::endl;
         std::cout << "  list                           List local languages" << std::endl;
@@ -317,6 +328,14 @@ int main(int argc, char* argv[]) {
             }
             int id = parseInt(argv[3]);
             return judgelite::contest::cmdLeaderboard(dataDir, id);
+        } else if (subCmd == "report") {
+            if (argc < 4) {
+                std::cerr << "Usage: judgelite.exe contest report [id] [out_html]" << std::endl;
+                return 1;
+            }
+            int id = parseInt(argv[3]);
+            std::string outPath = (argc > 4) ? argv[4] : "";
+            return judgelite::contest::cmdReport(dataDir, id, outPath);
         } else if (subCmd == "import") {
             if (argc < 4) {
                 std::cerr << "用法: judgelite.exe contest import [cdf文件路径]" << std::endl;
@@ -380,12 +399,14 @@ int main(int argc, char* argv[]) {
             return judgelite::problem::cmdCount(dataDir);
         } else if (subCmd == "create") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe problem create [title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol]" << std::endl;
+                std::cerr << "Usage: judgelite.exe problem create [title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
                 return 1;
             }
             std::string title = argv[3];
             std::string background, describe, exampleIn, exampleOut, instyle, outstyle;
             std::string compareMode, spjCode, spjExe;
+            std::string problemType, answerExt, sourceName, subtaskMode;
+            std::string dependenceJson, interactorFile, graderDir;
             double floatAbsTol = 0.0, floatRelTol = 0.0;
 
             // 解析可选参数
@@ -411,13 +432,30 @@ int main(int argc, char* argv[]) {
                     floatAbsTol = std::stod(argv[++i]);
                 } else if (strcmp(argv[i], "-float-rel") == 0 && i + 1 < argc) {
                     floatRelTol = std::stod(argv[++i]);
+                } else if (strcmp(argv[i], "-type") == 0 && i + 1 < argc) {
+                    problemType = argv[++i];
+                } else if (strcmp(argv[i], "-subtask-mode") == 0 && i + 1 < argc) {
+                    subtaskMode = argv[++i];
+                } else if (strcmp(argv[i], "-answer-ext") == 0 && i + 1 < argc) {
+                    answerExt = argv[++i];
+                } else if (strcmp(argv[i], "-source-name") == 0 && i + 1 < argc) {
+                    sourceName = argv[++i];
+                } else if (strcmp(argv[i], "-dependence") == 0 && i + 1 < argc) {
+                    dependenceJson = argv[++i];
+                } else if (strcmp(argv[i], "-interactor") == 0 && i + 1 < argc) {
+                    interactorFile = argv[++i];
+                } else if (strcmp(argv[i], "-grader") == 0 && i + 1 < argc) {
+                    graderDir = argv[++i];
                 }
             }
 
             return judgelite::problem::cmdCreate(dataDir, title, background, describe,
                                                   exampleIn, exampleOut, instyle, outstyle,
                                                   compareMode, spjCode, spjExe,
-                                                  floatAbsTol, floatRelTol);
+                                                  floatAbsTol, floatRelTol,
+                                                  problemType, answerExt, sourceName,
+                                                  subtaskMode, dependenceJson,
+                                                  interactorFile, graderDir);
         } else if (subCmd == "delete") {
             if (argc < 4) {
                 std::cerr << "Usage: judgelite.exe problem delete [id]" << std::endl;
@@ -427,12 +465,14 @@ int main(int argc, char* argv[]) {
             return judgelite::problem::cmdDelete(dataDir, id);
         } else if (subCmd == "edit") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe problem edit [id] [-title title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol]" << std::endl;
+                std::cerr << "Usage: judgelite.exe problem edit [id] [-title title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
             std::string title, background, describe, exampleIn, exampleOut, instyle, outstyle;
             std::string compareMode, spjCode, spjExe;
+            std::string problemType, answerExt, sourceName, subtaskMode;
+            std::string dependenceJson, interactorFile, graderDir;
             double floatAbsTol = 0.0, floatRelTol = 0.0;
 
             // 解析可选参数
@@ -460,13 +500,30 @@ int main(int argc, char* argv[]) {
                     floatAbsTol = std::stod(argv[++i]);
                 } else if (strcmp(argv[i], "-float-rel") == 0 && i + 1 < argc) {
                     floatRelTol = std::stod(argv[++i]);
+                } else if (strcmp(argv[i], "-type") == 0 && i + 1 < argc) {
+                    problemType = argv[++i];
+                } else if (strcmp(argv[i], "-subtask-mode") == 0 && i + 1 < argc) {
+                    subtaskMode = argv[++i];
+                } else if (strcmp(argv[i], "-answer-ext") == 0 && i + 1 < argc) {
+                    answerExt = argv[++i];
+                } else if (strcmp(argv[i], "-source-name") == 0 && i + 1 < argc) {
+                    sourceName = argv[++i];
+                } else if (strcmp(argv[i], "-dependence") == 0 && i + 1 < argc) {
+                    dependenceJson = argv[++i];
+                } else if (strcmp(argv[i], "-interactor") == 0 && i + 1 < argc) {
+                    interactorFile = argv[++i];
+                } else if (strcmp(argv[i], "-grader") == 0 && i + 1 < argc) {
+                    graderDir = argv[++i];
                 }
             }
 
             return judgelite::problem::cmdEdit(dataDir, id, title, background, describe,
                                                exampleIn, exampleOut, instyle, outstyle,
                                                compareMode, spjCode, spjExe,
-                                               floatAbsTol, floatRelTol);
+                                               floatAbsTol, floatRelTol,
+                                               problemType, answerExt, sourceName,
+                                               subtaskMode, dependenceJson,
+                                               interactorFile, graderDir);
         } else if (subCmd == "view") {
             if (argc < 4) {
                 std::cerr << "Usage: judgelite.exe problem view [id]" << std::endl;
@@ -584,6 +641,13 @@ int main(int argc, char* argv[]) {
             int L = (argc >= 4) ? parseInt(argv[3], 1) : 1;
             int R = (argc >= 5) ? parseInt(argv[4], 50) : 50;
             return clijudge::submit::cmdList(dataDir, L, R);
+        } else if (subCmd == "rejudge") {
+            if (argc < 4) {
+                std::cerr << "Usage: clijudge submit rejudge [id]" << std::endl;
+                return 1;
+            }
+            int id = parseInt(argv[3]);
+            return judgelite::problem::cmdRejudge(dataDir, id);
         } else {
             std::cerr << "Unknown submit command: " << subCmd << std::endl;
             showCommandHelp("submit");

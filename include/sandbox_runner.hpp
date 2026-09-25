@@ -40,6 +40,7 @@
 #include <string.h>
 #include <string>
 #include <vector>
+#include <mutex>
 
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "userenv.lib")
@@ -50,22 +51,37 @@ namespace clijudge {
 // 子进程不应继承父进程完整环境变量（可能含 API 密钥等敏感值）。
 // 只保留运行解释器/编译产物所需的最小集合（PATH / SystemRoot / TEMP /
 // TMP / COMPUTERNAME / USERNAME / OS），避免环境变量探测与密钥泄露。
+// extraEnv 中的 "K=V" 追加/覆盖到环境块。
 // 返回 CreateProcess lpEnvironment 格式的内存块（VAR=value\0 ... \0\0）。
-inline std::vector<char> buildMinEnvBlock() {
+inline std::vector<char> buildMinEnvBlock(const std::vector<std::string>& extraEnv = {}) {
     const char* names[] = {
         "PATH", "SystemRoot", "TEMP", "TMP", "COMPUTERNAME",
         "USERNAME", "USERPROFILE", "OS", "PATHEXT", "HOMEDRIVE",
         "HOMEPATH", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE"
     };
-    std::string block;
+    std::vector<std::string> entries;
     for (const char* n : names) {
         const char* v = getenv(n);
-        if (v && v[0]) {
-            block += n;
-            block += '=';
-            block += v;
-            block += '\0';
+        if (v && v[0]) entries.push_back(std::string(n) + "=" + v);
+    }
+    for (const auto& kv : extraEnv) {
+        size_t eq = kv.find('=');
+        if (eq == std::string::npos || eq == 0) continue;
+        std::string key = kv.substr(0, eq);
+        bool replaced = false;
+        for (auto& e : entries) {
+            if (e.compare(0, key.size(), key) == 0 && e.size() > key.size() && e[key.size()] == '=') {
+                e = kv;
+                replaced = true;
+                break;
+            }
         }
+        if (!replaced) entries.push_back(kv);
+    }
+    std::string block;
+    for (const auto& e : entries) {
+        block += e;
+        block += '\0';
     }
     block += '\0'; // 结束空串
     return std::vector<char>(block.begin(), block.end());
@@ -380,6 +396,29 @@ struct SandboxResult {
     bool success;
 };
 
+// ── 标准句柄配置（线程安全，替代 SetStdHandle 全局交换）──────
+// inherit=true  : 使用本进程标准句柄（旧行为，兼容调用）
+// inherit=false : 按 Path（沙箱内部打开文件）或 hStd*（管道端，调用方创建）
+//                 为子进程指定 stdin/stdout/stderr。句柄默认非继承，
+//                 仅在 CreateProcess 窗口内临时开启继承，互斥量保护，
+//                 防止并行评测时句柄被其它子进程错误继承。
+struct SandboxStdio {
+    bool inherit = true;
+    std::string stdinPath;
+    std::string stdoutPath;
+    std::string stderrPath;
+    HANDLE hStdin = NULL;
+    HANDLE hStdout = NULL;
+    HANDLE hStderr = NULL;
+};
+
+// spawn 窗口互斥：打开可继承句柄 → CreateProcess → 关闭，全程持锁。
+// 与 system()/其它 spawn 并发时保证可继承句柄集一致。
+inline std::mutex& spawnMutex() {
+    static std::mutex m;
+    return m;
+}
+
 // ── 主运行函数 ─────────────────────────────────────────────
 // timeLimitMs: 时间限制（毫秒）
 // memLimitMB: 内存限制（MB）
@@ -387,7 +426,14 @@ struct SandboxResult {
 // metaFile: 元数据输出文件路径
 // exePath: 要执行的程序路径
 // args: 程序参数列表
-// fileIoMode: 是否启用文件IO模式
+// fileIoMode: 是否启用文件IO模式（兼容保留）
+// io: 标准句柄配置（nullptr = 继承本进程句柄）
+// workingDir: 子进程工作目录（空 = 继承）
+// extraEnv: 追加环境变量 "K=V"
+// outputLimitBytes: stdout 文件大小上限（0 = 不限制）
+// trusted: 可信运行（编译器 / Special Judge 等需要在临时目录写文件的工具）。
+//          true 时 Windows 分支跳过受限令牌与低完整性级别（与 LemonLime
+//          的非沙箱编译一致）; 选手程序必须保持 false。
 inline SandboxResult sandbox_run(
     DWORD timeLimitMs,
     SIZE_T memLimitMB,
@@ -395,12 +441,18 @@ inline SandboxResult sandbox_run(
     const char* metaFile,
     const char* exePath,
     const std::vector<std::string>& args = {},
-    bool fileIoMode = false
+    bool fileIoMode = false,
+    const SandboxStdio* io = nullptr,
+    const std::string& workingDir = "",
+    const std::vector<std::string>& extraEnv = {},
+    size_t outputLimitBytes = 0,
+    bool trusted = false
 ) {
     SandboxResult result = { 0, 0, 0, "null", false };
+    (void)fileIoMode;
 
-    // 构建命令行
-    std::string cmdLine = exePath;
+    // 构建命令行（exe 路径含空格时必须整体加引号）
+    std::string cmdLine = quoteCmdArg(exePath);
     for (const auto& arg : args) {
         cmdLine += " ";
         cmdLine += quoteCmdArg(arg.c_str());
@@ -411,7 +463,10 @@ inline SandboxResult sandbox_run(
     SIZE_T memLimitBytes = memLimitMB * 1024 * 1024;
 
     // 1. 创建 Job Object
-    HANDLE hJob = createJob(timeLimitMs, memLimitBytes, maxProcesses);
+    // Job 硬限制 (阻止分配) 放宽到 4 倍, 让峰值指标能越过 1 倍阈值被轮询捕获,
+    // 否则分配在到达阈值前即被拒绝, 优雅处理分配失败的程序会被误判为正常退出。
+    SIZE_T jobMemLimit = memLimitBytes > 0 ? memLimitBytes * 4 : 0;
+    HANDLE hJob = createJob(timeLimitMs, jobMemLimit, maxProcesses);
     if (!hJob) {
         writeMeta(metaFile, -1, 0, 0, "SYSTEM_ERROR");
         return result;
@@ -421,8 +476,8 @@ inline SandboxResult sandbox_run(
     enablePrivilege(SE_ASSIGNPRIMARYTOKEN_NAME);
     enablePrivilege(SE_INCREASE_QUOTA_NAME);
 
-    // 2b. 构建受限令牌（禁用特权组 + 剥离高危特权）
-    HANDLE hRestricted = createRestrictedToken();
+    // 2b. 构建受限令牌（禁用特权组 + 剥离高危特权）; 可信运行不降权
+    HANDLE hRestricted = trusted ? NULL : createRestrictedToken();
 
     // 3. CREATE_SUSPENDED 创建子进程 (继承 stdio 句柄)
     STARTUPINFOA si = {};
@@ -438,9 +493,33 @@ inline SandboxResult sandbox_run(
 
     DWORD flags = CREATE_SUSPENDED;
 
-    // 子进程使用最小白名单环境
-    std::vector<char> envBlock = buildMinEnvBlock();
+    // 子进程环境：最小白名单 + 调用方追加变量
+    std::vector<char> envBlock = buildMinEnvBlock(extraEnv);
     LPCH lpEnv = envBlock.data();
+
+    // 显式 stdio：spawn 窗口内持锁，打开文件/临时开启继承 → CreateProcess → 立即清理
+    bool explicitIo = (io != nullptr && !io->inherit);
+    const char* workingDirPtr = NULL;
+    HANDLE hIn = NULL, hOut = NULL, hErr = NULL;
+    HANDLE opened[3] = { NULL, NULL, NULL };
+    bool providedInherit[3] = { false, false, false };
+    std::unique_lock<std::mutex> spawnLock(spawnMutex(), std::defer_lock);
+    if (explicitIo) {
+        spawnLock.lock();
+        SECURITY_ATTRIBUTES saIo = {};
+        saIo.nLength = sizeof(saIo);
+        saIo.bInheritHandle = TRUE;
+        if (io->hStdin) { hIn = io->hStdin; providedInherit[0] = true; SetHandleInformation(hIn, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT); }
+        else if (!io->stdinPath.empty()) { hIn = opened[0] = CreateFileA(io->stdinPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &saIo, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL); if (hIn == INVALID_HANDLE_VALUE) hIn = NULL, opened[0] = NULL; }
+        if (io->hStdout) { hOut = io->hStdout; providedInherit[1] = true; SetHandleInformation(hOut, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT); }
+        else if (!io->stdoutPath.empty()) { hOut = opened[1] = CreateFileA(io->stdoutPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &saIo, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); if (hOut == INVALID_HANDLE_VALUE) hOut = NULL, opened[1] = NULL; }
+        if (io->hStderr) { hErr = io->hStderr; providedInherit[2] = true; SetHandleInformation(hErr, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT); }
+        else if (!io->stderrPath.empty()) { hErr = opened[2] = CreateFileA(io->stderrPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &saIo, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); if (hErr == INVALID_HANDLE_VALUE) hErr = NULL, opened[2] = NULL; }
+        si.hStdInput = hIn;
+        si.hStdOutput = hOut;
+        si.hStdError = hErr;
+    }
+    if (!workingDir.empty()) workingDirPtr = workingDir.c_str();
 
     // 低完整性级别设置
     bool lowIl = true;
@@ -460,14 +539,25 @@ inline SandboxResult sandbox_run(
 
     BOOL ok = FALSE;
 
-    // 受限令牌路径
+    // 受限令牌路径; 可信运行使用普通 CreateProcess (同 LemonLime 编译行为)
     if (hRestricted) {
-        ok = CreateProcessAsUserA(hRestricted, NULL, cmdBuf.data(), &sa, &sa, TRUE, flags, lpEnv, NULL, &si, &pi);
+        ok = CreateProcessAsUserA(hRestricted, NULL, cmdBuf.data(), &sa, &sa, TRUE, flags, lpEnv, workingDirPtr, &si, &pi);
+    } else if (trusted) {
+        ok = CreateProcessA(NULL, cmdBuf.data(), &sa, &sa, TRUE, flags, lpEnv, workingDirPtr, &si, &pi);
     }
+
+    // spawn 窗口结束：关闭本进程打开的句柄、恢复调用方句柄继承属性、释放锁
+    auto cleanupSpawnHandles = [&]() {
+        for (int i = 0; i < 3; i++) if (opened[i]) { CloseHandle(opened[i]); opened[i] = NULL; }
+        if (providedInherit[0] && io && io->hStdin) SetHandleInformation(io->hStdin, HANDLE_FLAG_INHERIT, 0);
+        if (providedInherit[1] && io && io->hStdout) SetHandleInformation(io->hStdout, HANDLE_FLAG_INHERIT, 0);
+        if (providedInherit[2] && io && io->hStderr) SetHandleInformation(io->hStderr, HANDLE_FLAG_INHERIT, 0);
+        if (spawnLock.owns_lock()) spawnLock.unlock();
+    };
+    cleanupSpawnHandles();
 
     // 令牌路径全部失败时 fail-closed
     if (!ok) {
-        DWORD err = GetLastError();
         writeMeta(metaFile, -1, 0, 0, "SYSTEM_ERROR");
         CloseHandle(hJob);
         if (hRestricted) CloseHandle(hRestricted);
@@ -503,7 +593,8 @@ inline SandboxResult sandbox_run(
     DWORD startTime = GetTickCount();
     SIZE_T peakMemKB = 0;
     SIZE_T memLimitKB = memLimitBytes / 1024;
-    bool oom = false, timeout = false;
+    bool oom = false, timeout = false, outLimited = false;
+    int pollTick = 0;
 
     while (true) {
         DWORD waitResult = WaitForSingleObject(pi.hProcess, 50);
@@ -519,12 +610,27 @@ inline SandboxResult sandbox_run(
             timeout = true;
             break;
         }
+        // stdout 文件大小超限（Windows 无 RLIMIT_FSIZE，轮询实现）
+        if (outputLimitBytes > 0 && io && !io->stdoutPath.empty() && (++pollTick % 4 == 0)) {
+            HANDLE hF = CreateFileA(io->stdoutPath.c_str(), GENERIC_READ,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hF != INVALID_HANDLE_VALUE) {
+                LARGE_INTEGER li;
+                if (GetFileSizeEx(hF, &li) && (size_t)li.QuadPart > outputLimitBytes) {
+                    CloseHandle(hF);
+                    outLimited = true;
+                    break;
+                }
+                CloseHandle(hF);
+            }
+        }
     }
 
     DWORD timeUsed = GetTickCount() - startTime;
 
-    // 终止进程 (如果是超时或 OOM)
-    if (oom || timeout) {
+    // 终止进程 (如果是超时、OOM 或输出超限)
+    if (oom || timeout || outLimited) {
         TerminateProcess(pi.hProcess, 1);
         WaitForSingleObject(pi.hProcess, 500);
     }
@@ -537,12 +643,25 @@ inline SandboxResult sandbox_run(
             peakMemKB = pmc.PeakWorkingSetSize / 1024;
     }
 
+    // 进程自行退出但峰值内存已超限 (Job 内存限制只阻止分配, 不会杀进程) → 补判 MLE
+    if (!oom && !timeout && memLimitKB > 0 && peakMemKB > memLimitKB)
+        oom = true;
+
+    // 进程自行退出但输出文件超限 → 补判
+    if (!oom && !timeout && !outLimited && outputLimitBytes > 0 && io && !io->stdoutPath.empty()) {
+        WIN32_FILE_ATTRIBUTE_DATA fad;
+        if (GetFileAttributesExA(io->stdoutPath.c_str(), GetFileExInfoStandard, &fad) &&
+            (size_t)(((ULONGLONG)fad.nFileSizeHigh << 32) | fad.nFileSizeLow) > outputLimitBytes)
+            outLimited = true;
+    }
+
     DWORD exitCode = 0;
     GetExitCodeProcess(pi.hProcess, &exitCode);
 
     const char* signal = "null";
     if (oom) signal = "MEMORY_LIMIT";
     else if (timeout) signal = "SIGKILL";
+    else if (outLimited) signal = "OUTPUT_LIMIT";
 
     // 7. 写元数据
     writeMeta(metaFile, (int)exitCode, timeUsed, peakMemKB, signal);
@@ -566,6 +685,7 @@ inline SandboxResult sandbox_run(
 #else // ────────────────────────── Linux / POSIX 分支 ──────────────────────────
 
 #include <unistd.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <errno.h>
 #include <sys/types.h>
@@ -593,6 +713,41 @@ struct SandboxResult {
     const char* signal;
     bool success;
 };
+
+// ── 标准句柄配置（线程安全：文件在 fork 后的子进程内打开）────
+// inherit=true  : 使用本进程标准句柄（旧行为，兼容调用）
+// inherit=false : 按 Path（子进程内打开文件）或 fdStd*（管道端）
+//                 为子进程指定 stdin/stdout/stderr
+struct SandboxStdio {
+    bool inherit = true;
+    std::string stdinPath;
+    std::string stdoutPath;
+    std::string stderrPath;
+    int fdStdin = -1;
+    int fdStdout = -1;
+    int fdStderr = -1;
+};
+
+// PATH 搜索可执行文件（父进程内完成，避免 fork 后分配）
+inline std::string resolveInPath(const std::string& exe) {
+    if (exe.find('/') != std::string::npos) return exe;
+    const char* pathEnv = getenv("PATH");
+    if (!pathEnv || !pathEnv[0]) return exe;
+    std::string paths(pathEnv);
+    size_t pos = 0;
+    while (pos <= paths.size()) {
+        size_t sep = paths.find(':', pos);
+        std::string dir = paths.substr(pos, sep == std::string::npos ? std::string::npos : sep - pos);
+        if (dir.empty()) dir = ".";
+        std::string cand = dir + "/" + exe;
+        if (access(cand.c_str(), X_OK) == 0) return cand;
+        if (sep == std::string::npos) break;
+        pos = sep + 1;
+    }
+    return exe;
+}
+
+extern "C" char** environ;
 
 // ── 写元数据 JSON 到文件（格式与 Windows 分支完全一致）──────
 inline void ensureMetaPath(const char* path) {
@@ -635,9 +790,11 @@ inline size_t readVmHwmKB(pid_t pid) {
 }
 
 // ── 主运行函数（签名与 Windows 分支一致）────────────────────
-// 隔离手段: 独立进程组 + setrlimit(CPU/AS/CORE) + 轮询 VmHWM/墙钟
+// 隔离手段: 独立进程组 + setrlimit(CPU/AS/STACK/FPILE/CORE) + 轮询 VmHWM/墙钟
 // 说明: maxProcesses 在 Linux 上无法不依赖 cgroup 可靠地按进程树限制，
 //       此处不生效（预留参数，保持签名一致）。
+// io/workingDir/extraEnv/outputLimitBytes: 与 Windows 分支语义一致。
+// trusted: 与 Windows 分支签名保持一致 (POSIX 分支无令牌降权, 忽略)。
 inline SandboxResult sandbox_run(
     unsigned int timeLimitMs,
     size_t memLimitMB,
@@ -645,17 +802,60 @@ inline SandboxResult sandbox_run(
     const char* metaFile,
     const char* exePath,
     const std::vector<std::string>& args = {},
-    bool fileIoMode = false
+    bool fileIoMode = false,
+    const SandboxStdio* io = nullptr,
+    const std::string& workingDir = "",
+    const std::vector<std::string>& extraEnv = {},
+    size_t outputLimitBytes = 0,
+    bool trusted = false
 ) {
     SandboxResult result = { 0, 0, 0, "null", false };
     (void)maxProcesses;
     (void)fileIoMode;
+    (void)trusted;
 
     const size_t memLimitKB = memLimitMB * 1024;
     // RLIMIT_AS 留出富余，作为轮询间隙内疯狂分配的主机保护兜底；
     // 精确的 MLE 判定仍以 VmHWM 轮询（以及回收时 ru_maxrss 复核）为准。
     const rlim_t asBackstopBytes =
         memLimitMB > 0 ? (rlim_t)memLimitMB * 1024 * 1024 * 2 : (rlim_t)0;
+    const rlim_t stackLimitBytes =
+        memLimitMB > 0 ? (rlim_t)memLimitMB * 1024 * 1024 : (rlim_t)0;
+
+    // ── fork 前在父进程内构建 argv/envp 并解析路径 ────────────
+    // fork 后子进程只做 async-signal-safe 操作（setrlimit/open/dup2/chdir/execve），
+    // 多线程评测下避免在子进程里调用分配器造成死锁。
+    std::string resolved = resolveInPath(exePath);
+
+    std::vector<std::string> storage;
+    storage.reserve(1 + args.size());
+    storage.push_back(exePath);
+    storage.insert(storage.end(), args.begin(), args.end());
+    std::vector<char*> argv;
+    argv.reserve(storage.size() + 1);
+    for (auto& s : storage) argv.push_back(&s[0]);
+    argv.push_back(nullptr);
+
+    std::vector<std::string> envStorage;
+    for (char** e = environ; e && *e; ++e) envStorage.push_back(*e);
+    for (const auto& kv : extraEnv) {
+        size_t eq = kv.find('=');
+        if (eq == std::string::npos || eq == 0) continue;
+        std::string key = kv.substr(0, eq);
+        bool replaced = false;
+        for (auto& e : envStorage) {
+            if (e.compare(0, key.size(), key) == 0 && e.size() > key.size() && e[key.size()] == '=') {
+                e = kv;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) envStorage.push_back(kv);
+    }
+    std::vector<char*> envp;
+    envp.reserve(envStorage.size() + 1);
+    for (auto& s : envStorage) envp.push_back(&s[0]);
+    envp.push_back(nullptr);
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -677,19 +877,55 @@ inline SandboxResult sandbox_run(
             rl.rlim_cur = rl.rlim_max = asBackstopBytes;
             setrlimit(RLIMIT_AS, &rl);
         }
+        if (stackLimitBytes > 0) {
+            // 栈大小跟随内存限制（与 LemonLime watcher 行为一致）
+            rl.rlim_cur = rl.rlim_max = stackLimitBytes;
+            setrlimit(RLIMIT_STACK, &rl);
+        }
+        if (outputLimitBytes > 0) {
+            // 写文件大小上限，超出触发 SIGXFSZ → 上层判定 OUTPUT_LIMIT
+            rl.rlim_cur = rl.rlim_max = (rlim_t)outputLimitBytes;
+            setrlimit(RLIMIT_FSIZE, &rl);
+        }
         rl.rlim_cur = rl.rlim_max = 0;
         setrlimit(RLIMIT_CORE, &rl);
 
-        std::vector<std::string> storage;
-        storage.reserve(1 + args.size());
-        storage.push_back(exePath);
-        storage.insert(storage.end(), args.begin(), args.end());
-        std::vector<char*> argv;
-        argv.reserve(storage.size() + 1);
-        for (auto& s : storage) argv.push_back(&s[0]);
-        argv.push_back(nullptr);
+        // 标准句柄（文件在子进程内打开 —— 线程安全）
+        if (io && !io->inherit) {
+            int inFd = io->fdStdin;
+            int outFd = io->fdStdout;
+            int errFd = io->fdStderr;
+            if (inFd < 0 && !io->stdinPath.empty()) {
+                inFd = open(io->stdinPath.c_str(), O_RDONLY);
+                if (inFd < 0) _exit(126);
+            }
+            if (outFd < 0 && !io->stdoutPath.empty()) {
+                outFd = open(io->stdoutPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                if (outFd < 0) _exit(126);
+            }
+            if (errFd < 0 && !io->stderrPath.empty()) {
+                errFd = open(io->stderrPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                if (errFd < 0) _exit(126);
+            }
+            if (inFd >= 0 && inFd != STDIN_FILENO) { dup2(inFd, STDIN_FILENO); if (inFd > STDERR_FILENO) close(inFd); }
+            if (outFd >= 0 && outFd != STDOUT_FILENO) { dup2(outFd, STDOUT_FILENO); if (outFd > STDERR_FILENO) close(outFd); }
+            if (errFd >= 0 && errFd != STDERR_FILENO) { dup2(errFd, STDERR_FILENO); if (errFd > STDERR_FILENO) close(errFd); }
+        }
 
-        execv(exePath, argv.data());
+        if (!workingDir.empty()) {
+            if (chdir(workingDir.c_str()) != 0) _exit(126);
+        }
+
+        // 关闭继承自父进程的全部多余 fd。多线程并行评测/双进程管道评测下,
+        // 父进程同时持有其它评测的管道端; 不关闭会导致对端永远读不到 EOF。
+        // 此时 0/1/2 已是需要的句柄, 其余 (≥3) 一律关闭后再 exec。
+        {
+            long openMax = sysconf(_SC_OPEN_MAX);
+            if (openMax < 0 || openMax > 4096) openMax = 1024;
+            for (int fd = 3; fd < (int)openMax; fd++) close(fd);
+        }
+
+        execve(resolved.c_str(), argv.data(), envp.data());
         _exit(127); // exec 失败
     }
 
@@ -740,9 +976,21 @@ inline SandboxResult sandbox_run(
     if (!timedOut && !oom && WIFSIGNALED(status) && WTERMSIG(status) == SIGXCPU)
         timedOut = true;
 
+    // SIGXFSZ（RLIMIT_FSIZE 写文件超限触发）→ 输出超限
+    bool outLimited = false;
+    if (!timedOut && !oom && WIFSIGNALED(status) && WTERMSIG(status) == SIGXFSZ)
+        outLimited = true;
+
     // 轮询间隙内超过内存限制但进程已自行退出 → 补判 MLE
     if (!oom && memLimitKB > 0 && peakKB > memLimitKB)
         oom = true;
+
+    // stdout 文件超限补判（轮询间隙内写完退出）
+    if (!oom && !timedOut && !outLimited && outputLimitBytes > 0 && io && !io->stdoutPath.empty()) {
+        std::error_code ec;
+        auto sz = std::filesystem::file_size(io->stdoutPath, ec);
+        if (!ec && (size_t)sz > outputLimitBytes) outLimited = true;
+    }
 
     int exitCode = 0;
     if (exited) {
@@ -756,6 +1004,7 @@ inline SandboxResult sandbox_run(
     const char* signal = "null";
     if (oom) signal = "MEMORY_LIMIT";
     else if (timedOut) signal = "SIGKILL";
+    else if (outLimited) signal = "OUTPUT_LIMIT";
 
     writeMeta(metaFile, exitCode, timeUsed, peakKB, signal);
 

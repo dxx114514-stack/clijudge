@@ -109,7 +109,7 @@ inline std::string readFileContent(const std::string& path) {
     return ss.str();
 }
 
-// 解析 CDF TestCase
+// 解析 CDF TestCase (依赖标记条目: "<子任务号>_lemon_SUbtaskDEPENDENCE_fLAg")
 inline CdfTestCase parseTestCase(const json& j) {
     CdfTestCase tc;
     tc.fullScore = j.value("fullScore", 0);
@@ -118,16 +118,20 @@ inline CdfTestCase parseTestCase(const json& j) {
     tc.inputFiles = j.value("inputFiles", json::array()).get<std::vector<std::string>>();
     tc.outputFiles = j.value("outputFiles", json::array()).get<std::vector<std::string>>();
 
-    // 解析子任务依赖标记
     std::string flag = "_lemon_SUbtaskDEPENDENCE_fLAg";
-    auto it = std::remove_if(tc.inputFiles.begin(), tc.inputFiles.end(),
-        [&flag](const std::string& s) {
-            if (s.size() > flag.size() && s.substr(s.size() - flag.size()) == flag) {
-                return true;
+    std::vector<std::string> inputs = tc.inputFiles;
+    tc.inputFiles.clear();
+    for (const auto& s : inputs) {
+        if (s.size() > flag.size() && s.compare(s.size() - flag.size(), flag.size(), flag) == 0) {
+            std::string num = s.substr(0, s.size() - flag.size());
+            try {
+                tc.dependenceSubtask.push_back(std::stoi(num));
+            } catch (...) {
             }
-            return false;
-        });
-    tc.inputFiles.erase(it, tc.inputFiles.end());
+        } else {
+            tc.inputFiles.push_back(s);
+        }
+    }
 
     return tc;
 }
@@ -205,10 +209,21 @@ inline std::string comparisonModeToJudgeLite(int mode) {
         case 1: return "text_no_space";
         case 2: return "text_no_space";  // 外部工具近似为忽略空格
         case 3: return "float_all";
-        case 4: return "spj";
-        case 5: return "spj";
+        case 4: return "spj_lemon";
+        case 5: return "spj_testlib";
         default: return "text_strict";
     }
+}
+
+// JudgeLite compare_mode 转 CDF ComparisonMode (导出用)
+inline int judgeLiteToComparisonMode(const std::string& mode) {
+    if (mode == "text_no_space") return 1;
+    if (mode == "text_line") return 0;
+    if (mode == "float_abs" || mode == "float_rel" || mode == "float_all") return 3;
+    if (mode == "spj_testlib") return 5;
+    // spj / spj_lemon / 未知 → LemonSpecialJudge
+    if (mode == "text_strict") return 0;
+    return 4;
 }
 
 // CDF TaskType 转 JudgeLite problem_type
@@ -221,6 +236,15 @@ inline std::string taskTypeToJudgeLite(int type) {
         case 4: return "communication_exec";
         default: return "traditional";
     }
+}
+
+// JudgeLite problem_type 转 CDF TaskType (导出用)
+inline int judgeLiteToTaskType(const std::string& type) {
+    if (type == "answers_only") return 1;
+    if (type == "interaction") return 2;
+    if (type == "communication") return 3;
+    if (type == "communication_exec") return 4;
+    return 0;
 }
 
 // 生成 CDF TestCase JSON

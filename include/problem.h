@@ -97,6 +97,7 @@ struct Submission {
     int timeUsed;
     int memoryUsed;
     std::string username;
+    std::string judgeDetail;  // resultToJson 序列化 (评测详情)
 };
 
 // 数据存储类
@@ -207,6 +208,13 @@ public:
                 {"float_rel_tolerance", 0.0},
                 {"spj_code", ""},
                 {"special_judge_exe", ""},
+                {"answer_file_extension", "out"},
+                {"source_file_name", ""},
+                {"subtask_dependence", json::object()},
+                {"interactor_code", ""},
+                {"interactor_data", ""},
+                {"interactor_name", ""},
+                {"grader_files", json::object()},
                 {"allowed_languages", json::array()}
             }},
             {"test_cases", json::array()}
@@ -337,6 +345,10 @@ public:
         sub.score = judgeResult.totalScore;
         sub.timeUsed = judgeResult.totalTimeMs;
         sub.memoryUsed = judgeResult.maxMemoryKB;
+        try {
+            sub.judgeDetail = clijudge::judge::resultToJson(judgeResult).dump();
+        } catch (...) {
+        }
 
         return sub;
     }
@@ -576,6 +588,67 @@ inline int cmdCount(const std::string& dataDir) {
     return 0;
 }
 
+// 应用题型相关可选参数 (-type/-subtask-mode/-answer-ext/-source-name/
+// -dependence/-interactor/-grader); 出错时打印并返回 false
+inline bool applyTypeOptions(json& updates,
+                             const std::string& problemType,
+                             const std::string& answerExt,
+                             const std::string& sourceName,
+                             const std::string& subtaskMode,
+                             const std::string& dependenceJson,
+                             const std::string& interactorFile,
+                             const std::string& graderDir) {
+    if (!problemType.empty()) updates["problem_type"] = problemType;
+    if (!answerExt.empty()) updates["answer_file_extension"] = answerExt;
+    if (!sourceName.empty()) updates["source_file_name"] = sourceName;
+    if (!subtaskMode.empty()) updates["subtask_mode"] = subtaskMode;
+    if (!dependenceJson.empty()) {
+        try {
+            updates["subtask_dependence"] = json::parse(dependenceJson);
+        } catch (...) {
+            std::cerr << "Invalid dependence JSON: " << dependenceJson << std::endl;
+            return false;
+        }
+    }
+    if (!interactorFile.empty()) {
+        if (!fs::exists(interactorFile)) {
+            std::cerr << "Interactor file not found: " << interactorFile << std::endl;
+            return false;
+        }
+        std::string ext = fs::path(interactorFile).extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char ch) { return (char)std::tolower(ch); });
+        if (ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".c") {
+            updates["interactor_code"] = readFileContent(interactorFile);
+            if (updates["interactor_code"].get<std::string>().empty()) {
+                std::cerr << "Failed to read interactor file: " << interactorFile << std::endl;
+                return false;
+            }
+        } else {
+            updates["interactor_data"] = fs::absolute(interactorFile).string();
+        }
+    }
+    if (!graderDir.empty()) {
+        json gf = json::object();
+        std::error_code ec;
+        fs::recursive_directory_iterator it(graderDir, ec), end;
+        for (; !ec && it != end; it.increment(ec)) {
+            if (!it->is_regular_file()) continue;
+            std::error_code rec;
+            fs::path rel = fs::relative(it->path(), graderDir, rec);
+            if (rec) continue;
+            std::string key = rel.generic_string();
+            gf[key] = readFileContent(it->path().string());
+        }
+        if (ec || gf.empty()) {
+            std::cerr << "No grader files found in: " << graderDir << std::endl;
+            return false;
+        }
+        updates["grader_files"] = gf;
+    }
+    return true;
+}
+
 inline int cmdCreate(const std::string& dataDir, const std::string& title,
                      const std::string& background = "",
                      const std::string& describe = "",
@@ -587,7 +660,14 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
                      const std::string& spjCode = "",
                      const std::string& spjExe = "",
                      double floatAbsTol = 0.0,
-                     double floatRelTol = 0.0) {
+                     double floatRelTol = 0.0,
+                     const std::string& problemType = "",
+                     const std::string& answerExt = "",
+                     const std::string& sourceName = "",
+                     const std::string& subtaskMode = "",
+                     const std::string& dependenceJson = "",
+                     const std::string& interactorFile = "",
+                     const std::string& graderDir = "") {
     ProblemStore store(dataDir);
     int id = store.create(title);
 
@@ -628,6 +708,12 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
     }
     if (floatRelTol > 0.0) {
         updates["float_rel_tolerance"] = floatRelTol;
+    }
+    // 题型相关选项 (在 compare 之后应用, -type 优先于 -compare 的强制回退)
+    if (!applyTypeOptions(updates, problemType, answerExt, sourceName, subtaskMode,
+                          dependenceJson, interactorFile, graderDir)) {
+        store.deleteProblem(id);
+        return 1;
     }
 
     if (!updates.empty()) {
@@ -761,9 +847,16 @@ inline int cmdEdit(const std::string& dataDir, int id,
                    const std::string& outstyle = "",
                    const std::string& compareMode = "",
                    const std::string& spjCode = "",
-                   const std::string& spjExe = "",
-                   double floatAbsTol = 0.0,
-                   double floatRelTol = 0.0) {
+                    const std::string& spjExe = "",
+                    double floatAbsTol = 0.0,
+                    double floatRelTol = 0.0,
+                    const std::string& problemType = "",
+                    const std::string& answerExt = "",
+                    const std::string& sourceName = "",
+                    const std::string& subtaskMode = "",
+                    const std::string& dependenceJson = "",
+                    const std::string& interactorFile = "",
+                    const std::string& graderDir = "") {
     ProblemStore store(dataDir);
 
     json updates;
@@ -806,6 +899,11 @@ inline int cmdEdit(const std::string& dataDir, int id,
     if (floatRelTol > 0.0) {
         updates["float_rel_tolerance"] = floatRelTol;
     }
+    // 题型相关选项 (在 compare 之后应用, -type 优先于 -compare 的强制回退)
+    if (!applyTypeOptions(updates, problemType, answerExt, sourceName, subtaskMode,
+                          dependenceJson, interactorFile, graderDir)) {
+        return 1;
+    }
 
     if (updates.empty()) {
         std::cerr << "No updates specified." << std::endl;
@@ -833,10 +931,14 @@ inline int cmdSubmit(const std::string& dataDir, int problemId, const std::strin
     ProblemStore store(dataDir);
     auto submission = store.submit(problemId, filePath);
 
-    clijudge::submit::addSubmission(dataDir, problemId, "", filePath,
+    std::string pTitle;
+    json pj = store.view(problemId);
+    if (!pj.is_null() && pj.contains("problem")) pTitle = pj["problem"].value("title", "");
+
+    clijudge::submit::addSubmission(dataDir, problemId, pTitle, filePath,
                                      submission.status, submission.score,
                                      submission.timeUsed, submission.memoryUsed,
-                                     username);
+                                     username, submission.judgeDetail);
 
     std::cout << "=== Submission Result ===" << std::endl;
     std::cout << "Status: " << submission.status << std::endl;
@@ -845,6 +947,61 @@ inline int cmdSubmit(const std::string& dataDir, int problemId, const std::strin
     std::cout << "Memory: " << submission.memoryUsed << " KB" << std::endl;
     std::cout << "User: " << (username.empty() ? "unknown" : username) << std::endl;
 
+    return (submission.status == "AC") ? 0 : 1;
+}
+
+// 重新评判提交 (上限 settings.max_rejudge_times)
+inline int cmdRejudge(const std::string& dataDir, int submissionId) {
+    clijudge::submit::SubmitStore sstore(dataDir);
+    json sub = sstore.getSubmission(submissionId);
+    if (sub.is_null()) {
+        std::cerr << "Submission " << submissionId << " not found." << std::endl;
+        return 1;
+    }
+    int problemId = sub.value("problem_id", 0);
+    std::string filePath = sub.value("file_path", "");
+    int judgeTimes = sub.value("judge_times", 1);
+    int maxTimes = clijudge::settings::getMaxRejudgeTimes();
+    if (judgeTimes > maxTimes) {
+        std::cerr << "Max rejudge times reached (" << maxTimes << ")." << std::endl;
+        return 1;
+    }
+
+    ProblemStore store(dataDir);
+    json problem = store.view(problemId);
+    if (problem.is_null()) {
+        std::cerr << "Problem " << problemId << " not found." << std::endl;
+        return 1;
+    }
+    if (!fs::exists(filePath)) {
+        std::cerr << "Submission file not found: " << filePath << std::endl;
+        return 1;
+    }
+
+    auto submission = store.submit(problemId, filePath);
+
+    json upd;
+    upd["status"] = submission.status;
+    upd["score"] = submission.score;
+    upd["time_used"] = submission.timeUsed;
+    upd["memory_used"] = submission.memoryUsed;
+    upd["judge_times"] = judgeTimes + 1;
+    upd["judged_at"] = clijudge::submit::getCurrentTime();
+    if (!submission.judgeDetail.empty()) {
+        try {
+            upd["judge_detail"] = json::parse(submission.judgeDetail);
+        } catch (...) {
+        }
+    }
+    sstore.updateSubmission(submissionId, upd);
+
+    std::cout << "=== Rejudge Result ===" << std::endl;
+    std::cout << "Submission: " << submissionId << std::endl;
+    std::cout << "Status: " << submission.status << std::endl;
+    std::cout << "Score: " << submission.score << std::endl;
+    std::cout << "Time: " << submission.timeUsed << " ms" << std::endl;
+    std::cout << "Memory: " << submission.memoryUsed << " KB" << std::endl;
+    std::cout << "Judge times: " << (judgeTimes + 1) << std::endl;
     return (submission.status == "AC") ? 0 : 1;
 }
 

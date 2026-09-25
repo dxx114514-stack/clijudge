@@ -20,6 +20,8 @@
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
+#include <cmath>
+#include <cctype>
 #include "json.hpp"
 #include "cdf.h"
 #include "platform.h"
@@ -212,13 +214,18 @@ public:
         int score = 0;
         int timeUsed = 0;
         int memoryUsed = 0;
-        
+        json judgeDetail = nullptr;
+
         if (!problemData.is_null() && fs::exists(filePath)) {
             auto judgeResult = clijudge::judge::judgeSubmission(problemData, filePath);
             result = clijudge::judge::statusToAbbr(judgeResult.status);
             score = judgeResult.totalScore;
             timeUsed = judgeResult.totalTimeMs;
             memoryUsed = judgeResult.maxMemoryKB;
+            try {
+                judgeDetail = clijudge::judge::resultToJson(judgeResult);
+            } catch (...) {
+            }
         }
 
         // 保存提交记录
@@ -232,8 +239,10 @@ public:
             {"score", score},
             {"time_used", timeUsed},
             {"memory_used", memoryUsed},
+            {"judge_times", 1},
             {"username", username.empty() ? "unknown" : username}
         };
+        if (!judgeDetail.is_null()) submission["judge_detail"] = judgeDetail;
 
         ensureDataDir();
         std::string submissionPath = dataDir + "/contest_" + std::to_string(contestId) +
@@ -306,7 +315,11 @@ public:
             problemJson["problem"]["spj_code"] = "";
             problemJson["problem"]["special_judge_exe"] = task.specialJudge;
             problemJson["problem"]["allowed_languages"] = json::array();
-            problemJson["problem"]["subtask_mode"] = "simple";
+            // Lemon 每个 testcase = 一个子任务, 多文件取 min (等价 all_or_nothing)
+            problemJson["problem"]["subtask_mode"] = "all_or_nothing";
+            problemJson["problem"]["answer_file_extension"] =
+                task.answerFileExtension.empty() ? "out" : task.answerFileExtension;
+            problemJson["problem"]["source_file_name"] = task.sourceFileName;
             problemJson["problem"]["description"] = "";
             problemJson["problem"]["input_desc"] = "";
             problemJson["problem"]["output_desc"] = "";
@@ -315,53 +328,106 @@ public:
             problemJson["problem"]["sample_output"] = "";
 
             if (task.comparisonMode == 3) {
-                problemJson["problem"]["float_abs_tolerance"] = 0.0;
-                problemJson["problem"]["float_rel_tolerance"] = 0.0;
+                // RealNumber: eps = 10^-realPrecision, abs 与 rel 同用
+                double eps = std::pow(10.0, -(double)(task.realPrecision > 0 ? task.realPrecision : 6));
+                problemJson["problem"]["float_abs_tolerance"] = eps;
+                problemJson["problem"]["float_rel_tolerance"] = eps;
             }
 
-            // 构建测试用例
+            std::string pType = judgelite::cdf::taskTypeToJudgeLite(task.taskType);
+            json graderFiles = json::object();
+
+            // 交互题: interactor 源码 → interactor_code, 可执行文件 → interactor_data;
+            // Lemon 的 task.grader (编译时附着在选手侧) → grader_files
+            if (pType == "interaction") {
+                auto resolve = [&](const std::string& rel) -> std::string {
+                    if (rel.empty()) return "";
+                    fs::path p1 = cdfDataDir / rel;
+                    if (fs::exists(p1)) return p1.string();
+                    if (fs::exists(fs::path(rel))) return fs::absolute(rel).string();
+                    return "";
+                };
+                std::string interPath = resolve(task.interactor);
+                if (!interPath.empty()) {
+                    std::string ext = fs::path(interPath).extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(),
+                                   [](unsigned char ch) { return (char)std::tolower(ch); });
+                    if (ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".c") {
+                        problemJson["problem"]["interactor_code"] =
+                            judgelite::cdf::readFileContent(interPath);
+                    } else {
+                        problemJson["problem"]["interactor_data"] = interPath;
+                    }
+                }
+                problemJson["problem"]["interactor_name"] = task.interactorName;
+                std::string graderPath = resolve(task.grader);
+                if (!graderPath.empty()) {
+                    graderFiles[fs::path(task.grader).filename().generic_string()] =
+                        judgelite::cdf::readFileContent(graderPath);
+                }
+            }
+
+            // 通信题: grader 文件 → grader_files {相对名: 内容}
+            if (pType == "communication" || pType == "communication_exec") {
+                for (size_t i = 0; i < task.graderFilesPath.size(); i++) {
+                    std::string rel = task.graderFilesPath[i];
+                    fs::path gp = cdfDataDir / rel;
+                    if (!fs::exists(gp)) continue;
+                    std::string name = i < task.graderFilesName.size() && !task.graderFilesName[i].empty()
+                                           ? task.graderFilesName[i]
+                                           : fs::path(rel).filename().string();
+                    std::replace(name.begin(), name.end(), '\\', '/');
+                    if (name.empty() || name[0] == '/' || name.find(':') != std::string::npos ||
+                        name.find("..") != std::string::npos)
+                        continue;
+                    graderFiles[name] = judgelite::cdf::readFileContent(gp.string());
+                }
+            }
+            if (!graderFiles.empty()) problemJson["problem"]["grader_files"] = graderFiles;
+
+            // 构建测试用例: 一个 Lemon testcase (可能多文件) → 一个子任务,
+            // 每个 (input, output) 对拆为一个 CliJudge 测试点, 共享 subtask_id
             json testCases = json::array();
-            for (size_t i = 0; i < task.testCases.size(); i++) {
-                const auto& tc = task.testCases[i];
-                json tcJson;
-                tcJson["id"] = (int)i + 1;
-                tcJson["score"] = tc.fullScore;
-                tcJson["time_limit"] = -1;
-                tcJson["memory_limit"] = -1;
-                tcJson["sort_order"] = (int)i + 1;
-                tcJson["input_file"] = "";
-                tcJson["output_file"] = "";
+            json depMap = json::object();
+            int cliIdx = 0;
+            for (size_t t = 0; t < task.testCases.size(); t++) {
+                const auto& tc = task.testCases[t];
+                int subtaskId = (int)t + 1;
 
-                // 读取输入文件
-                std::string inputData;
-                for (const auto& inputFile : tc.inputFiles) {
-                    fs::path inputPath = cdfDataDir / inputFile;
-                    if (fs::exists(inputPath)) {
-                        inputData += judgelite::cdf::readFileContent(inputPath.string());
-                    }
-                }
-                tcJson["input_data"] = inputData;
-
-                // 读取输出文件
-                std::string outputData;
-                for (const auto& outputFile : tc.outputFiles) {
-                    fs::path outputPath = cdfDataDir / outputFile;
-                    if (fs::exists(outputPath)) {
-                        outputData += judgelite::cdf::readFileContent(outputPath.string());
-                    }
-                }
-                tcJson["output_data"] = outputData;
-
-                // 存储子任务依赖信息
+                // 依赖标记 → problem.subtask_dependence {"<子任务号>": [依赖子任务号]}
                 if (!tc.dependenceSubtask.empty()) {
-                    tcJson["subtask_id"] = tc.dependenceSubtask[0];
-                } else {
-                    tcJson["subtask_id"] = (int)i + 1;
+                    json deps = json::array();
+                    for (int d : tc.dependenceSubtask) deps.push_back(d);
+                    depMap[std::to_string(subtaskId)] = deps;
                 }
 
-                testCases.push_back(tcJson);
+                size_t n = std::min(tc.inputFiles.size(), tc.outputFiles.size());
+                if (n == 0) n = std::max(tc.inputFiles.size(), tc.outputFiles.size());
+                if (n == 0) n = 1;
+                for (size_t j = 0; j < n; j++) {
+                    json tcJson;
+                    tcJson["id"] = ++cliIdx;
+                    tcJson["score"] = tc.fullScore;
+                    tcJson["time_limit"] = -1;
+                    tcJson["memory_limit"] = -1;
+                    tcJson["sort_order"] = cliIdx;
+                    tcJson["input_file"] = "";
+                    tcJson["output_file"] = "";
+
+                    std::string inputData, outputData;
+                    if (j < tc.inputFiles.size())
+                        inputData = judgelite::cdf::readFileContent((cdfDataDir / tc.inputFiles[j]).string());
+                    if (j < tc.outputFiles.size())
+                        outputData = judgelite::cdf::readFileContent((cdfDataDir / tc.outputFiles[j]).string());
+                    tcJson["input_data"] = inputData;
+                    tcJson["output_data"] = outputData;
+                    tcJson["subtask_id"] = subtaskId;
+
+                    testCases.push_back(tcJson);
+                }
             }
             problemJson["test_cases"] = testCases;
+            problemJson["problem"]["subtask_dependence"] = depMap;
 
             // 导入题目
             int problemId = problemStore.importProblem(problemJson);
@@ -384,12 +450,31 @@ public:
         return contestId;
     }
 
-    // 导出为 CDF 格式
-    json exportCdf(int contestId) {
+    // 导出为 CDF 格式; 测试数据/交互器/grader 写入 <cdfPath 同级>/data/
+    json exportCdf(int contestId, const std::string& cdfPath) {
         json contest = view(contestId);
         if (contest.is_null()) return nullptr;
 
         judgelite::problem::ProblemStore problemStore(dataDir);
+
+        fs::path outDir = fs::path(cdfPath).parent_path();
+        if (outDir.empty()) outDir = ".";
+        fs::path dataPath = outDir / "data";
+        std::error_code dirEc;
+        fs::create_directories(dataPath, dirEc);
+        if (dirEc) {
+            std::cerr << "无法创建数据目录: " << dataPath.string() << " (" << dirEc.message() << ")" << std::endl;
+            return nullptr;
+        }
+
+        auto writeFile = [](const fs::path& path, const std::string& content) -> bool {
+            std::error_code cec;
+            fs::create_directories(path.parent_path(), cec);
+            std::ofstream f(path, std::ios::binary);
+            if (!f.is_open()) return false;
+            f.write(content.data(), (std::streamsize)content.size());
+            return f.good();
+        };
 
         json cdf;
         cdf["version"] = "1.0";
@@ -397,7 +482,6 @@ public:
 
         json tasks = json::array();
         if (contest.contains("problem_ids")) {
-            int idx = 1;
             for (const auto& pid : contest["problem_ids"]) {
                 int problemId = pid.get<int>();
                 json problem = problemStore.view(problemId);
@@ -406,45 +490,163 @@ public:
                 const auto& p = problem["problem"];
                 const auto& testCases = problem.value("test_cases", json::array());
 
+                std::string pType = p.value("problem_type", "traditional");
+                std::string srcName = p.value("source_file_name", "");
+                if (srcName.empty()) srcName = p.value("title", "solution");
+
+                // 数据目录名: 去掉路径分隔符, 避免写出 data 目录外
+                std::string dirName = srcName;
+                for (auto& ch : dirName) {
+                    if (ch == '/' || ch == '\\' || ch == ':' || ch == '<' || ch == '>' || ch == '|' ||
+                        ch == '*' || ch == '?' || ch == '"')
+                        ch = '_';
+                }
+                if (dirName.empty() || dirName == "." || dirName == "..") dirName = "task";
+
                 json task;
                 task["problemTitle"] = p.value("title", "");
-                task["sourceFileName"] = p.value("title", "solution");
-                task["inputFileName"] = p.value("title", "input") + ".in";
-                task["outputFileName"] = p.value("title", "output") + ".out";
+                task["sourceFileName"] = srcName;
+                task["inputFileName"] = srcName + ".in";
+                task["outputFileName"] = srcName + ".out";
                 task["standardInputCheck"] = true;
                 task["standardOutputCheck"] = true;
-                task["taskType"] = 0;
+                task["taskType"] = judgelite::cdf::judgeLiteToTaskType(pType);
                 task["subFolderCheck"] = false;
-
-                // 映射 comparisonMode
-                std::string compareMode = p.value("compare_mode", "text_strict");
-                if (compareMode == "text_strict") task["comparisonMode"] = 0;
-                else if (compareMode == "text_no_space") task["comparisonMode"] = 1;
-                else if (compareMode == "float_all" || compareMode == "float_abs" || compareMode == "float_rel") task["comparisonMode"] = 3;
-                else task["comparisonMode"] = 4;
-
+                task["comparisonMode"] =
+                    judgelite::cdf::judgeLiteToComparisonMode(p.value("compare_mode", "text_strict"));
                 task["diffArguments"] = "--ignore-space-change --text --brief";
-                task["realPrecision"] = 3;
+                double ftol = p.value("float_abs_tolerance", 0.0);
+                int realPrecision = 3;
+                if (ftol > 0.0) {
+                    int e = (int)std::lround(-std::log10(ftol));
+                    if (e >= 0 && e <= 15) realPrecision = e;
+                }
+                task["realPrecision"] = realPrecision;
                 task["specialJudge"] = p.value("special_judge_exe", "");
-                task["answerFileExtension"] = "out";
+                task["answerFileExtension"] = p.value("answer_file_extension", "out");
                 task["compilerConfiguration"] = json::object();
 
+                // 交互题: interactor / grader (Lemon 单文件字段)
+                if (pType == "interaction") {
+                    std::string iCode = p.value("interactor_code", "");
+                    std::string iData = p.value("interactor_data", "");
+                    if (!iCode.empty()) {
+                        fs::path ip = dataPath / dirName / "interactor.cpp";
+                        if (writeFile(ip, iCode)) {
+                            task["interactor"] = dirName + "/interactor.cpp";
+                            task["interactorName"] = "interactor.cpp";
+                        }
+                    } else if (!iData.empty() && fs::exists(fs::path(iData))) {
+                        fs::path dst = dataPath / dirName / fs::path(iData).filename();
+                        std::error_code cec;
+                        fs::create_directories(dst.parent_path(), cec);
+                        fs::copy_file(iData, dst, fs::copy_options::overwrite_existing, cec);
+                        if (!cec) {
+                            task["interactor"] = dirName + "/" + dst.filename().generic_string();
+                            task["interactorName"] = dst.filename().string();
+                        }
+                    }
+                    json gf = p.value("grader_files", json::object());
+                    if (gf.is_object() && !gf.empty()) {
+                        auto it = gf.begin();
+                        std::string gkey = it.key();
+                        std::replace(gkey.begin(), gkey.end(), '\\', '/');
+                        if (it->is_string() && !gkey.empty() && gkey[0] != '/' &&
+                            gkey.find("..") == std::string::npos && gkey.find(':') == std::string::npos) {
+                            if (writeFile(dataPath / dirName / gkey, it.value().get<std::string>()))
+                                task["grader"] = dirName + "/" + gkey;
+                        }
+                    }
+                }
+
+                // 通信题: grader 文件数组 + 选手源文件名 (Lemon 过滤器)
+                if (pType == "communication" || pType == "communication_exec") {
+                    json gf = p.value("grader_files", json::object());
+                    json gPaths = json::array(), gNames = json::array();
+                    if (gf.is_object()) {
+                        for (auto it = gf.begin(); it != gf.end(); ++it) {
+                            std::string gkey = it.key();
+                            std::replace(gkey.begin(), gkey.end(), '\\', '/');
+                            if (!it->is_string() || gkey.empty() || gkey[0] == '/' ||
+                                gkey.find("..") != std::string::npos || gkey.find(':') != std::string::npos)
+                                continue;
+                            if (!writeFile(dataPath / dirName / gkey, it.value().get<std::string>()))
+                                continue;
+                            gPaths.push_back(dirName + "/" + gkey);
+                            gNames.push_back(gkey);
+                        }
+                    }
+                    if (!gPaths.empty()) {
+                        task["graderFilesPath"] = gPaths;
+                        task["graderFilesName"] = gNames;
+                    }
+                    // 选手提交文件名 (Lemon 用作过滤器, 无法预知提交扩展名 → 常见 .cpp)
+                    std::string sName = srcName;
+                    if (fs::path(sName).extension().empty()) sName += ".cpp";
+                    task["sourceFilesPath"] = json::array({sName});
+                    task["sourceFilesName"] = json::array({sName});
+                }
+
+                // 测试点: 每个 CliJudge 测试点 → 一个 Lemon 测试点 (保留每点分数/部分分)
+                std::vector<const json*> sorted;
+                sorted.reserve(testCases.size());
+                for (const auto& tc : testCases) sorted.push_back(&tc);
+                std::stable_sort(sorted.begin(), sorted.end(),
+                                 [](const json* a, const json* b) {
+                                     return a->value("sort_order", 0) < b->value("sort_order", 0);
+                                 });
+
+                // subtask_id → 该子任务首个测试点的 Lemon 序号 (依赖标记用)
+                std::map<int, int> sidFirstCase;
+                int caseNo = 0;
+                for (const json* tc : sorted) {
+                    caseNo++;
+                    int sid = tc->value("subtask_id", 1);
+                    if (sidFirstCase.find(sid) == sidFirstCase.end()) sidFirstCase[sid] = caseNo;
+                }
+
                 json cdfTestCases = json::array();
-                int caseIdx = 1;
-                for (const auto& tc : testCases) {
+                int n = 0;
+                for (const json* tc : sorted) {
+                    n++;
+                    std::string inRel = dirName + "/" + std::to_string(n) + ".in";
+                    std::string outRel = dirName + "/" + std::to_string(n) + ".ans";
+                    writeFile(dataPath / inRel, tc->value("input_data", ""));
+                    writeFile(dataPath / outRel, tc->value("output_data", ""));
+
+                    int tl = tc->value("time_limit", -1);
+                    if (tl <= 0) tl = p.value("time_limit", 1000);
+                    int ml = tc->value("memory_limit", -1);
+                    if (ml <= 0) ml = p.value("memory_limit", 256);
+
                     json cdfTc;
-                    cdfTc["fullScore"] = tc.value("score", 0);
-                    cdfTc["timeLimit"] = p.value("time_limit", 1000);
-                    cdfTc["memoryLimit"] = p.value("memory_limit", 256);
-                    cdfTc["inputFiles"] = json::array({task["sourceFileName"].get<std::string>() + "/" + std::to_string(caseIdx) + ".in"});
-                    cdfTc["outputFiles"] = json::array({task["sourceFileName"].get<std::string>() + "/" + std::to_string(caseIdx) + ".ans"});
+                    cdfTc["fullScore"] = tc->value("score", 0);
+                    cdfTc["timeLimit"] = tl;
+                    cdfTc["memoryLimit"] = ml;
+                    json inputs = json::array({inRel});
+
+                    int sid = tc->value("subtask_id", 1);
+                    auto dmIt = p.find("subtask_dependence");
+                    if (dmIt != p.end() && dmIt->is_object()) {
+                        auto dIt = dmIt->find(std::to_string(sid));
+                        if (dIt != dmIt->end() && dIt->is_array()) {
+                            for (const auto& depIdJson : *dIt) {
+                                if (!depIdJson.is_number_integer()) continue;
+                                auto fIt = sidFirstCase.find(depIdJson.get<int>());
+                                if (fIt == sidFirstCase.end()) continue;
+                                inputs.push_back(std::to_string(fIt->second) +
+                                                 "_lemon_SUbtaskDEPENDENCE_fLAg");
+                            }
+                        }
+                    }
+
+                    cdfTc["inputFiles"] = inputs;
+                    cdfTc["outputFiles"] = json::array({outRel});
                     cdfTestCases.push_back(cdfTc);
-                    caseIdx++;
                 }
                 task["testCases"] = cdfTestCases;
 
                 tasks.push_back(task);
-                idx++;
             }
         }
         cdf["tasks"] = tasks;
@@ -502,6 +704,188 @@ public:
         }
 
         return rankings;
+    }
+
+    // 生成比赛报告 HTML (排名 + 题目 + 提交明细含 judge_detail)
+    std::string reportHtml(int contestId) {
+        json contest = view(contestId);
+        if (contest.is_null()) return "";
+        judgelite::problem::ProblemStore problemStore(dataDir);
+        int nP = contest.contains("problem_ids") ? (int)contest["problem_ids"].size() : 0;
+
+        std::vector<std::string> titles((size_t)std::max(nP, 0), "");
+        std::vector<int> maxScores((size_t)std::max(nP, 0), 0);
+        for (int i = 0; i < nP; i++) {
+            json p = problemStore.view(contest["problem_ids"][i].get<int>());
+            if (p.is_null()) continue;
+            titles[i] = p["problem"].value("title", "");
+            for (const auto& tc : p.value("test_cases", json::array()))
+                maxScores[i] += tc.value("score", 0);
+        }
+
+        auto esc = [](const std::string& s) {
+            std::string o;
+            o.reserve(s.size());
+            for (char c : s) {
+                switch (c) {
+                    case '&': o += "&amp;"; break;
+                    case '<': o += "&lt;"; break;
+                    case '>': o += "&gt;"; break;
+                    case '"': o += "&quot;"; break;
+                    default: o += c;
+                }
+            }
+            return o;
+        };
+        auto detailText = [](const json& d) -> std::string {
+            if (!d.is_object()) return "";
+            std::string o;
+            std::string ce = d.value("compile_error", "");
+            if (!ce.empty()) o += "Compile Error:\n" + ce + "\n\n";
+            for (const auto& st : d.value("subtasks", json::array())) {
+                o += "Subtask " + std::to_string(st.value("id", 0)) + ": " +
+                     std::to_string(st.value("score", 0)) + "/" + std::to_string(st.value("max_score", 0)) +
+                     " " + st.value("status_abbr", "") + "\n";
+                for (const auto& tc : st.value("test_cases", json::array())) {
+                    o += "  #" + std::to_string(tc.value("id", 0)) + " " + tc.value("status_abbr", "") + " " +
+                         std::to_string(tc.value("score", 0)) + "/" + std::to_string(tc.value("max_score", 0)) + " " +
+                         std::to_string(tc.value("time_ms", 0)) + "ms " +
+                         std::to_string(tc.value("memory_kb", 0)) + "KB";
+                    std::string msg = tc.value("message", "");
+                    if (!msg.empty()) o += " - " + msg;
+                    o += "\n";
+                }
+            }
+            return o;
+        };
+
+        struct Row {
+            int pIdx;
+            std::string at, user, result;
+            int score, timeUsed, mem, jtimes;
+            json detail;
+        };
+        std::vector<Row> rows;
+        std::vector<std::string> users;
+        std::map<std::string, std::map<int, size_t>> best;
+
+        for (int i = 0; i < nP; i++) {
+            json subs = viewProblemSubmissions(contestId, i + 1);
+            if (!subs.is_array()) continue;
+            for (const auto& sub : subs) {
+                Row r;
+                r.pIdx = i;
+                r.at = sub.value("submitted_at", "");
+                r.user = sub.value("username", "unknown");
+                r.result = sub.value("result", "pending");
+                r.score = sub.value("score", 0);
+                r.timeUsed = sub.value("time_used", 0);
+                r.mem = sub.value("memory_used", 0);
+                r.jtimes = sub.value("judge_times", 1);
+                r.detail = sub.value("judge_detail", json());
+                rows.push_back(r);
+                size_t idx = rows.size() - 1;
+                if (std::find(users.begin(), users.end(), r.user) == users.end()) users.push_back(r.user);
+                auto slotIt = best[r.user].find(r.pIdx);
+                if (slotIt == best[r.user].end()) {
+                    best[r.user][r.pIdx] = idx;
+                } else {
+                    const Row& cur = rows[slotIt->second];
+                    if (r.score > cur.score ||
+                        (r.score == cur.score && r.result == "AC" && cur.result != "AC"))
+                        slotIt->second = idx;
+                }
+            }
+        }
+
+        std::vector<std::pair<std::string, int>> totals;
+        for (const auto& u : users) {
+            int t = 0;
+            for (const auto& [pi, idx] : best[u]) t += rows[idx].score;
+            totals.push_back({u, t});
+        }
+        std::stable_sort(totals.begin(), totals.end(),
+                         [](const std::pair<std::string, int>& a, const std::pair<std::string, int>& b) {
+                             return a.second != b.second ? a.second > b.second : a.first < b.first;
+                         });
+
+        std::string H;
+        H += "<!DOCTYPE html>\n<html lang=\"zh\">\n<head>\n<meta charset=\"utf-8\">\n";
+        H += "<title>比赛报告 - " + esc(contest.value("title", "")) + "</title>\n<style>\n";
+        H += "body{font-family:'Segoe UI',Arial,sans-serif;margin:24px;color:#222;}\n";
+        H += "h1{border-bottom:2px solid #4a90d9;padding-bottom:8px;}\n";
+        H += "table{border-collapse:collapse;margin:12px 0;}\n";
+        H += "th,td{border:1px solid #bbb;padding:5px 10px;text-align:center;font-size:14px;}\n";
+        H += "th{background:#eef3fa;}\n";
+        H += ".st-AC{background:#c8e6c9;} .st-WA{background:#ffcdd2;} .st-PE{background:#ffe0b2;}\n";
+        H += ".st-TLE,.st-MLE,.st-RE{background:#ffcc80;}\n";
+        H += ".st-CE{background:#cfd8dc;} .st-SE,.st-IE,.st-SK{background:#e1bee7;}\n";
+        H += ".st-PC{background:#fff9c4;} .st-OLE,.st-ST,.st-SR{background:#b3e5fc;}\n";
+        H += ".muted{color:#777;font-size:13px;}\n";
+        H += "details{text-align:left;}\npre{background:#f6f8fa;padding:8px;border:1px solid #ddd;white-space:pre-wrap;}\n";
+        H += "</style>\n</head>\n<body>\n";
+
+        H += "<h1>比赛报告: " + esc(contest.value("title", "")) + "</h1>\n";
+        H += "<p class=\"muted\">时间: " + esc(contest.value("start_time", "")) + " ~ " +
+             esc(contest.value("end_time", "")) + " · 生成于 " + esc(getCurrentTime()) + "</p>\n";
+
+        H += "<h2>题目</h2>\n<table>\n<tr><th>#</th><th>标题</th><th>满分</th></tr>\n";
+        for (int i = 0; i < nP; i++) {
+            H += "<tr><td>" + std::to_string(i + 1) + "</td><td>" + esc(titles[(size_t)i]) + "</td><td>" +
+                 std::to_string(maxScores[(size_t)i]) + "</td></tr>\n";
+        }
+        H += "</table>\n";
+
+        H += "<h2>排名</h2>\n";
+        if (totals.empty()) {
+            H += "<p class=\"muted\">暂无提交</p>\n";
+        } else {
+            H += "<table>\n<tr><th>名次</th><th>选手</th>";
+            for (int i = 0; i < nP; i++) H += "<th>P" + std::to_string(i + 1) + "</th>";
+            H += "<th>总分</th></tr>\n";
+            for (size_t ti = 0; ti < totals.size(); ti++) {
+                const auto& user = totals[ti].first;
+                H += "<tr><td>" + std::to_string(ti + 1) + "</td><td>" + esc(user) + "</td>";
+                for (int i = 0; i < nP; i++) {
+                    auto slotIt = best[user].find(i);
+                    if (slotIt == best[user].end()) {
+                        H += "<td>-</td>";
+                    } else {
+                        const Row& r = rows[slotIt->second];
+                        H += "<td class=\"st-" + esc(r.result) + "\">" + std::to_string(r.score) + " " +
+                             esc(r.result) + "</td>";
+                    }
+                }
+                H += "<td><b>" + std::to_string(totals[ti].second) + "</b></td></tr>\n";
+            }
+            H += "</table>\n";
+        }
+
+        H += "<h2>提交记录</h2>\n";
+        if (rows.empty()) {
+            H += "<p class=\"muted\">暂无提交</p>\n";
+        } else {
+            H += "<table>\n<tr><th>时间</th><th>选手</th><th>题目</th><th>状态</th><th>得分</th>";
+            H += "<th>时间(ms)</th><th>内存(KB)</th><th>评测次数</th><th>详情</th></tr>\n";
+            for (const auto& r : rows) {
+                std::string dt = detailText(r.detail);
+                H += "<tr><td>" + esc(r.at) + "</td><td>" + esc(r.user) + "</td><td>P" +
+                     std::to_string(r.pIdx + 1) + " " + esc(titles[(size_t)r.pIdx]) + "</td>" +
+                     "<td class=\"st-" + esc(r.result) + "\">" + esc(r.result) + "</td><td>" +
+                     std::to_string(r.score) + "</td><td>" + std::to_string(r.timeUsed) + "</td><td>" +
+                     std::to_string(r.mem) + "</td><td>" + std::to_string(r.jtimes) + "</td><td>";
+                if (dt.empty()) {
+                    H += "-";
+                } else {
+                    H += "<details><summary>查看</summary><pre>" + esc(dt) + "</pre></details>";
+                }
+                H += "</td></tr>\n";
+            }
+            H += "</table>\n";
+        }
+
+        H += "</body>\n</html>\n";
+        return H;
     }
 
 private:
@@ -587,6 +971,25 @@ inline int cmdLeaderboard(const std::string& dataDir, int contestId) {
     return 0;
 }
 
+inline int cmdReport(const std::string& dataDir, int contestId, const std::string& outPath = "") {
+    ContestStore store(dataDir);
+    std::string html = store.reportHtml(contestId);
+    if (html.empty()) {
+        std::cerr << "Contest " << contestId << " not found." << std::endl;
+        return 1;
+    }
+    std::string path = outPath.empty() ? ("contest_" + std::to_string(contestId) + "_report.html") : outPath;
+    std::ofstream f(path, std::ios::binary);
+    if (!f.is_open()) {
+        std::cerr << "无法创建文件: " << path << std::endl;
+        return 1;
+    }
+    f << html;
+    f.close();
+    std::cout << "比赛报告已生成: " << path << std::endl;
+    return 0;
+}
+
 inline int cmdImportCdf(const std::string& dataDir, const std::string& cdfPath) {
     if (!fs::exists(cdfPath)) {
         std::cerr << "CDF 文件不存在: " << cdfPath << std::endl;
@@ -602,7 +1005,7 @@ inline int cmdImportCdf(const std::string& dataDir, const std::string& cdfPath) 
 
 inline int cmdExportCdf(const std::string& dataDir, int contestId, const std::string& cdfPath) {
     ContestStore store(dataDir);
-    json cdf = store.exportCdf(contestId);
+    json cdf = store.exportCdf(contestId, cdfPath);
     if (cdf.is_null()) {
         std::cerr << "Contest " << contestId << " not found." << std::endl;
         return 1;

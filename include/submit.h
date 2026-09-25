@@ -36,6 +36,7 @@ struct Submission {
     int timeUsed;
     int memoryUsed;
     std::string username;
+    std::string judgeDetail;  // resultToJson 序列化 (评测详情)
 };
 
 // 数据存储类
@@ -109,8 +110,15 @@ public:
             {"score", sub.score},
             {"time_used", sub.timeUsed},
             {"memory_used", sub.memoryUsed},
+            {"judge_times", 1},
             {"username", sub.username.empty() ? "unknown" : sub.username}
         };
+        if (!sub.judgeDetail.empty()) {
+            try {
+                submission["judge_detail"] = json::parse(sub.judgeDetail);
+            } catch (...) {
+            }
+        }
 
         data.push_back(submission);
         saveIndex();
@@ -128,14 +136,30 @@ public:
         return nullptr;
     }
 
-    // 列出提交记录
+    // 更新提交记录字段 (rejudge 用)
+    bool updateSubmission(int id, const json& updates) {
+        for (auto& item : data) {
+            if (item.contains("id") && item["id"].get<int>() == id) {
+                for (auto it = updates.begin(); it != updates.end(); ++it) {
+                    item[it.key()] = it.value();
+                }
+                saveIndex();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 列出提交记录 (不含 judge_detail, 详情见 submissions.json / 比赛报告)
     json list(int left = 1, int right = 50) {
         json result = json::array();
         int count = 0;
         for (const auto& item : data) {
             count++;
             if (count >= left && count <= right) {
-                result.push_back(item);
+                json overview = item;
+                overview.erase("judge_detail");
+                result.push_back(overview);
             }
             if (count > right) break;
         }
@@ -197,7 +221,8 @@ inline std::string getCurrentTime() {
 inline int addSubmission(const std::string& dataDir, int problemId, const std::string& problemTitle,
                          const std::string& filePath, const std::string& status,
                          int score = 0, int timeUsed = 0, int memoryUsed = 0,
-                         const std::string& username = "") {
+                         const std::string& username = "",
+                         const std::string& judgeDetail = "") {
     SubmitStore store(dataDir);
 
     Submission sub;
@@ -210,6 +235,7 @@ inline int addSubmission(const std::string& dataDir, int problemId, const std::s
     sub.timeUsed = timeUsed;
     sub.memoryUsed = memoryUsed;
     sub.username = username;
+    sub.judgeDetail = judgeDetail;
 
     return store.addSubmission(sub);
 }
