@@ -44,14 +44,19 @@ inline std::string getExeDir() {
     return platform::exeDir();
 }
 
+// 数据目录（统一走 platform::dataDir：环境变量优先，其次 exe 目录/data）
+inline std::string dataDir() {
+    return platform::dataDir();
+}
+
 // 获取语言文件目录
 inline std::string getLangsDir() {
-    return platform::pathJoin(platform::pathJoin(getExeDir(), "data"), "langs");
+    return platform::pathJoin(dataDir(), "langs");
 }
 
 // 获取配置文件路径
 inline std::string getConfigPath() {
-    return platform::pathJoin(platform::pathJoin(getExeDir(), "data"), "config.json");
+    return platform::pathJoin(dataDir(), "config.json");
 }
 
 // 语言名白名单（防路径穿越与 URL/shell 注入）
@@ -158,6 +163,120 @@ inline bool writeFile(const std::string& path, const std::string& content) {
     return f.good();
 }
 
+// 内置英文语言包（离线兜底；与 languages 分支 langs/en.cjl 保持同步）
+inline const std::string& builtinEnJson() {
+    static const std::string kEn = R"CLJ({
+  "meta": {
+    "name": "en",
+    "display": "English",
+    "version": "1.0.0"
+  },
+  "strings": {
+    "help": {
+      "title": "CliJudge - Lightweight Command-Line Judge System",
+      "usage": "Usage: clijudge.exe <command> [arguments...]",
+      "commands": "Commands:",
+      "article": "Article management",
+      "contest": "Contest management",
+      "ide": "IDE functions",
+      "problem": "Problem management",
+      "submit": "Submission management",
+      "displaylang": "Display language settings",
+      "more_info": "Use 'clijudge.exe <command> help' for more information about a command."
+    },
+    "article": {
+      "commands": "Article Commands:",
+      "count": "Count articles",
+      "create": "Create article",
+      "delete": "Delete article",
+      "list": "List articles",
+      "view": "View article"
+    },
+    "contest": {
+      "commands": "Contest Commands:",
+      "create": "Create contest",
+      "delete": "Delete contest",
+      "export": "Export contest to CDF",
+      "import": "Import contest from CDF",
+      "leaderboard": "View contest leaderboard",
+      "report": "Export contest report (HTML)",
+      "problem": "Contest problem",
+      "submit": "Submit solution",
+      "view_submissions": "View submissions",
+      "view": "View contest"
+    },
+    "problem": {
+      "commands": "Problem Commands:",
+      "count": "Count problems",
+      "create": "Create problem",
+      "delete": "Delete problem",
+      "edit": "Edit problem (same options as create)",
+      "export": "Export problem",
+      "import": "Import problem",
+      "list": "List problems",
+      "submit": "Submit solution",
+      "testdata": "Test data management",
+      "set_all": "Set all test data defaults",
+      "import_zip": "Import test data from zip",
+      "create_test": "Create test case",
+      "delete_test": "Delete test case",
+      "list_test": "List test cases",
+      "view": "View problem"
+    },
+    "submit": {
+      "commands": "Submit Commands:",
+      "count": "Count submissions",
+      "list": "List submissions",
+      "rejudge": "Rejudge submission"
+    },
+    "ide": {
+      "commands": "IDE Commands:",
+      "run": "Run code"
+    },
+    "displaylang": {
+      "commands": "Display Language Commands:",
+      "list": "List local languages",
+      "list_online": "List online languages",
+      "switch": "Switch display language",
+      "delete": "Delete local language",
+      "pull": "Pull language (no switch)"
+    },
+    "judge": {
+      "accepted": "Accepted",
+      "wrong_answer": "Wrong Answer",
+      "time_limit": "Time Limit Exceeded",
+      "memory_limit": "Memory Limit Exceeded",
+      "runtime_error": "Runtime Error",
+      "compile_error": "Compilation Error",
+      "system_error": "System Error",
+      "skipped": "Skipped",
+      "score": "Score",
+      "time": "Time",
+      "memory": "Memory",
+      "status": "Status",
+      "user": "User"
+    },
+    "error": {
+      "no_lang": "Error: No display language configured.",
+      "no_lang_hint": "Please run: clijudge displaylang switch [langname]",
+      "no_lang_list": "Use 'clijudge displaylang list --online' to see available languages.",
+      "not_found": "not found",
+      "failed": "Failed",
+      "usage": "Usage:"
+    },
+    "success": {
+      "created": "created",
+      "deleted": "deleted",
+      "updated": "updated",
+      "switched": "Switched to language",
+      "downloaded": "Downloaded successfully"
+    }
+  }
+}
+)CLJ";
+    return kEn;
+}
+
 // 读取配置
 inline json loadConfig() {
     std::string path = getConfigPath();
@@ -175,6 +294,17 @@ inline json loadConfig() {
 // 保存配置
 inline bool saveConfig(const json& config) {
     return writeFile(getConfigPath(), config.dump(2));
+}
+
+// 首次运行（配置文件不存在）自动启用内置英文语言包，保证离线可用
+inline void ensureDefaultLang() {
+    std::string cfgPath = getConfigPath();
+    if (fs::exists(cfgPath)) return;
+    std::string langPath = platform::pathJoin(getLangsDir(), "en.cjl");
+    if (!fs::exists(langPath)) {
+        writeFile(langPath, builtinEnJson());
+    }
+    saveConfig(json{{"current_lang", "en"}});
 }
 
 // 获取当前语言名
@@ -338,8 +468,9 @@ inline json getOnlineLangs() {
     }
 }
 
-// 下载语言文件
-inline bool downloadLang(const std::string& langName) {
+// 下载语言文件（en 下载失败时回退到内置语言包，保证离线可用）
+inline bool downloadLang(const std::string& langName, bool* usedBuiltin = nullptr) {
+    if (usedBuiltin) *usedBuiltin = false;
     if (!validLangName(langName)) {
         std::cerr << "Invalid language name: " << langName << std::endl;
         return false;
@@ -349,8 +480,13 @@ inline bool downloadLang(const std::string& langName) {
     
     std::string content = httpGet(url);
     if (content.empty()) {
-        std::cerr << "Failed to download language file: " << langName << std::endl;
-        return false;
+        if (langName == "en") {
+            content = builtinEnJson();
+            if (usedBuiltin) *usedBuiltin = true;
+        } else {
+            std::cerr << "Failed to download language file: " << langName << std::endl;
+            return false;
+        }
     }
     
     std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
@@ -409,6 +545,55 @@ inline json getLocalLangs() {
     return langs;
 }
 
+// ── 本地化字符串获取 ──────────────────────────────────────────
+
+// 全局语言数据缓存
+inline json& getLangData() {
+    static json langData = nullptr;
+    static bool loaded = false;
+    
+    if (!loaded) {
+        loaded = true;
+        std::string current = getCurrentLang();
+        if (!current.empty()) {
+            langData = loadLang(current);
+        }
+    }
+    
+    return langData;
+}
+
+// 按点分隔键路径查找节点，未找到返回 nullptr
+inline const json* lookupPath(const json& node, const std::string& key) {
+    if (!node.is_object()) return nullptr;
+    const json* p = &node;
+    std::istringstream ss(key);
+    std::string segment;
+    while (std::getline(ss, segment, '.')) {
+        if (!p->is_object() || !p->contains(segment)) return nullptr;
+        p = &(*p)[segment];
+    }
+    return p;
+}
+
+// 获取本地化字符串
+// 键路径从根查找；若根下不存在则回退到 "strings" 包装层（.cjl 的实际结构）
+inline std::string tr(const std::string& key, const std::string& fallback = "") {
+    json& langData = getLangData();
+    if (langData.is_null()) {
+        return fallback.empty() ? key : fallback;
+    }
+    
+    const json* node = lookupPath(langData, key);
+    if (!node && langData.contains("strings")) {
+        node = lookupPath(langData["strings"], key);
+    }
+    if (node && node->is_string()) {
+        return node->get<std::string>();
+    }
+    return fallback.empty() ? key : fallback;
+}
+
 // ── 子命令实现 ────────────────────────────────────────────────
 
 // list - 显示本地/在线语言
@@ -463,11 +648,16 @@ inline int cmdSwitch(const std::string& langName) {
     std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
     if (!fs::exists(path)) {
         std::cout << "Language '" << langName << "' not found locally. Downloading..." << std::endl;
-        if (!downloadLang(langName)) {
+        bool usedBuiltin = false;
+        if (!downloadLang(langName, &usedBuiltin)) {
             std::cerr << "Failed to download language: " << langName << std::endl;
             return 1;
         }
-        std::cout << "Downloaded successfully." << std::endl;
+        if (usedBuiltin) {
+            std::cout << "Using built-in language pack." << std::endl;
+        } else {
+            std::cout << tr("success.downloaded", "Downloaded successfully") << "." << std::endl;
+        }
     }
     
     // 验证文件有效
@@ -481,7 +671,7 @@ inline int cmdSwitch(const std::string& langName) {
     json config = loadConfig();
     config["current_lang"] = langName;
     if (saveConfig(config)) {
-        std::cout << "Switched to language: " << langName << std::endl;
+        std::cout << tr("success.switched", "Switched to language") << ": " << langName << std::endl;
     } else {
         std::cerr << "Failed to save configuration." << std::endl;
         return 1;
@@ -544,51 +734,9 @@ inline int cmdPull(const std::string& langName) {
     return 0;
 }
 
-// ── 本地化字符串获取 ──────────────────────────────────────────
-
-// 全局语言数据缓存
-inline json& getLangData() {
-    static json langData = nullptr;
-    static bool loaded = false;
-    
-    if (!loaded) {
-        loaded = true;
-        std::string current = getCurrentLang();
-        if (!current.empty()) {
-            langData = loadLang(current);
-        }
-    }
-    
-    return langData;
-}
-
-// 获取本地化字符串
-inline std::string tr(const std::string& key, const std::string& fallback = "") {
-    json& langData = getLangData();
-    if (langData.is_null()) {
-        return fallback.empty() ? key : fallback;
-    }
-    
-    // 支持点分隔的键路径 (如 "help.title")
-    json* node = &langData;
-    std::istringstream ss(key);
-    std::string segment;
-    
-    while (std::getline(ss, segment, '.')) {
-        if (node->contains(segment) && (*node)[segment].is_object()) {
-            node = &(*node)[segment];
-        } else if (node->contains(segment)) {
-            return (*node)[segment].get<std::string>();
-        } else {
-            return fallback.empty() ? key : fallback;
-        }
-    }
-    
-    return fallback.empty() ? key : fallback;
-}
-
 // 检查是否已配置语言
 inline bool isLangConfigured() {
+    ensureDefaultLang(); // 首次运行自动配置内置英文包（离线可用）
     std::string current = getCurrentLang();
     if (current.empty()) return false;
     json langData = loadLang(current);
@@ -597,10 +745,11 @@ inline bool isLangConfigured() {
 
 // 显示未配置语言的错误信息
 inline void showNoLangError() {
-    std::cerr << "Error: No display language configured." << std::endl;
+    std::cerr << tr("error.no_lang", "Error: No display language configured.") << std::endl;
     std::cerr << std::endl;
-    std::cerr << "Please run: clijudge displaylang switch [langname]" << std::endl;
-    std::cerr << "Use 'clijudge displaylang list --online' to see available languages." << std::endl;
+    std::cerr << tr("error.no_lang_hint", "Please run: clijudge displaylang switch [langname]") << std::endl;
+    std::cerr << tr("error.no_lang_list", "Use 'clijudge displaylang list --online' to see available languages.") << std::endl;
+    std::cerr << "Offline fallback: clijudge displaylang switch en" << std::endl;
 }
 
 } // namespace lang

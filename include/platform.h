@@ -7,6 +7,7 @@
 #include <string>
 #include <ctime>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <chrono>
 
@@ -92,6 +93,23 @@ inline void localTime(const time_t* t, struct tm* out) {
 // 路径拼接（使用当前平台分隔符）
 inline std::string pathJoin(const std::string& a, const std::string& b) {
     return (fs::path(a) / b).string();
+}
+
+// 数据目录（环境变量 CLIJUDGE_DATA_DIR/JUDGELITE_DATA_DIR 优先，其次 exe 目录/data）
+// lang.h、settings.h、main.cpp 统一使用此函数
+inline std::string dataDir() {
+    const char* env = std::getenv("CLIJUDGE_DATA_DIR");
+    if (!env || !env[0]) {
+        env = std::getenv("JUDGELITE_DATA_DIR"); // 兼容旧变量名
+    }
+    if (env && env[0]) {
+        return std::string(env);
+    }
+    std::string exe = exeDir();
+    if (!exe.empty() && exe != ".") {
+        return pathJoin(exe, "data");
+    }
+    return pathJoin(".", "data");
 }
 
 // 可执行文件扩展名

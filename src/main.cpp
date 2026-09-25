@@ -1,7 +1,7 @@
 // main.cpp
 // JudgeLite 轻量级命令行在线评测系统主入口
 //
-// 用法: judgelite.exe <子命令> [参数...]
+// 用法: clijudge.exe <子命令> [参数...]
 //
 // 子命令列表:
 //   article
@@ -67,98 +67,83 @@
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
-// 默认数据目录
+// 默认数据目录（与 lang::dataDir 同源：环境变量优先，其次 exe 目录/data）
 std::string getDataDir() {
-    // 优先使用环境变量
-    const char* dataDir = getenv("CLIJUDGE_DATA_DIR");
-    if (!dataDir || !dataDir[0]) {
-        dataDir = getenv("JUDGELITE_DATA_DIR"); // 兼容旧变量名
-    }
-    if (dataDir && dataDir[0]) {
-        return std::string(dataDir);
-    }
-
-    // 使用可执行文件所在目录
-    std::string exeDir = clijudge::platform::exeDir();
-    if (!exeDir.empty() && exeDir != ".") {
-        return clijudge::platform::pathJoin(exeDir, "data");
-    }
-
-    return clijudge::platform::pathJoin(".", "data");
+    return clijudge::lang::dataDir();
 }
 
 // 显示帮助信息
 void showHelp() {
-    std::cout << "JudgeLite - Lightweight Command-Line Online Judge System" << std::endl;
+    std::cout << clijudge::lang::tr("help.title", "CliJudge - Lightweight Command-Line Judge System") << std::endl;
     std::cout << std::endl;
-    std::cout << "Usage: judgelite.exe <command> [arguments...]" << std::endl;
+    std::cout << clijudge::lang::tr("help.usage", "Usage: clijudge.exe <command> [arguments...]") << std::endl;
     std::cout << std::endl;
-    std::cout << "Commands:" << std::endl;
-    std::cout << "  article   - Article management" << std::endl;
-    std::cout << "  contest   - Contest management" << std::endl;
-    std::cout << "  ide       - IDE functions" << std::endl;
-    std::cout << "  problem   - Problem management" << std::endl;
-    std::cout << "  submit    - Submission management" << std::endl;
+    std::cout << clijudge::lang::tr("help.commands", "Commands:") << std::endl;
+    std::cout << "  article   - " << clijudge::lang::tr("help.article", "Article management") << std::endl;
+    std::cout << "  contest   - " << clijudge::lang::tr("help.contest", "Contest management") << std::endl;
+    std::cout << "  ide       - " << clijudge::lang::tr("help.ide", "IDE functions") << std::endl;
+    std::cout << "  problem   - " << clijudge::lang::tr("help.problem", "Problem management") << std::endl;
+    std::cout << "  submit    - " << clijudge::lang::tr("help.submit", "Submission management") << std::endl;
     std::cout << std::endl;
-    std::cout << "Use 'judgelite.exe <command> help' for more information about a command." << std::endl;
+    std::cout << clijudge::lang::tr("help.more_info", "Use 'clijudge.exe <command> help' for more information about a command.") << std::endl;
 }
 
 // 显示子命令帮助
 void showCommandHelp(const std::string& command) {
     if (command == "article") {
-        std::cout << "Article Commands:" << std::endl;
-        std::cout << "  count                          Count articles" << std::endl;
-        std::cout << "  create [title] [md_file]       Create article" << std::endl;
-        std::cout << "  delete [id]                    Delete article" << std::endl;
-        std::cout << "  list [L=1] [R=50]              List articles" << std::endl;
-        std::cout << "  view [id]                      View article" << std::endl;
+        std::cout << clijudge::lang::tr("article.commands", "Article Commands:") << std::endl;
+        std::cout << "  count                          " << clijudge::lang::tr("article.count", "Count articles") << std::endl;
+        std::cout << "  create [title] [md_file]       " << clijudge::lang::tr("article.create", "Create article") << std::endl;
+        std::cout << "  delete [id]                    " << clijudge::lang::tr("article.delete", "Delete article") << std::endl;
+        std::cout << "  list [L=1] [R=50]              " << clijudge::lang::tr("article.list", "List articles") << std::endl;
+        std::cout << "  view [id]                      " << clijudge::lang::tr("article.view", "View article") << std::endl;
     } else if (command == "contest") {
-        std::cout << "Contest Commands:" << std::endl;
-        std::cout << "  create [title] [start] [end] [prob1] [prob2]  Create contest" << std::endl;
-        std::cout << "  delete [id]                    Delete contest" << std::endl;
-        std::cout << "  export [id] [cdf_path]         Export contest to CDF" << std::endl;
-        std::cout << "  import [cdf_path]              Import contest from CDF" << std::endl;
-        std::cout << "  leaderboard [id]               View contest leaderboard" << std::endl;
-        std::cout << "  report [id] [out_html]         Export contest report (HTML)" << std::endl;
-        std::cout << "  problem [id] [prob_index]      Contest problem" << std::endl;
-        std::cout << "    submit [file] [--as user]    Submit solution" << std::endl;
-        std::cout << "    view                         View submissions" << std::endl;
-        std::cout << "  view [id]                      View contest" << std::endl;
+        std::cout << clijudge::lang::tr("contest.commands", "Contest Commands:") << std::endl;
+        std::cout << "  create [title] [start] [end] [prob1] [prob2]  " << clijudge::lang::tr("contest.create", "Create contest") << std::endl;
+        std::cout << "  delete [id]                    " << clijudge::lang::tr("contest.delete", "Delete contest") << std::endl;
+        std::cout << "  export [id] [cdf_path]         " << clijudge::lang::tr("contest.export", "Export contest to CDF") << std::endl;
+        std::cout << "  import [cdf_path]              " << clijudge::lang::tr("contest.import", "Import contest from CDF") << std::endl;
+        std::cout << "  leaderboard [id]               " << clijudge::lang::tr("contest.leaderboard", "View contest leaderboard") << std::endl;
+        std::cout << "  report [id] [out_html]         " << clijudge::lang::tr("contest.report", "Export contest report (HTML)") << std::endl;
+        std::cout << "  problem [id] [prob_index]      " << clijudge::lang::tr("contest.problem", "Contest problem") << std::endl;
+        std::cout << "    submit [file] [--as user]    " << clijudge::lang::tr("contest.submit", "Submit solution") << std::endl;
+        std::cout << "    view                         " << clijudge::lang::tr("contest.view_submissions", "View submissions") << std::endl;
+        std::cout << "  view [id]                      " << clijudge::lang::tr("contest.view", "View contest") << std::endl;
     } else if (command == "ide") {
-        std::cout << "IDE Commands:" << std::endl;
-        std::cout << "  run [code] [input]             Run code" << std::endl;
+        std::cout << clijudge::lang::tr("ide.commands", "IDE Commands:") << std::endl;
+        std::cout << "  run [code] [input]             " << clijudge::lang::tr("ide.run", "Run code") << std::endl;
     } else if (command == "problem") {
-        std::cout << "Problem Commands:" << std::endl;
-        std::cout << "  count                          Count problems" << std::endl;
-        std::cout << "  create [title]                 Create problem" << std::endl;
+        std::cout << clijudge::lang::tr("problem.commands", "Problem Commands:") << std::endl;
+        std::cout << "  count                          " << clijudge::lang::tr("problem.count", "Count problems") << std::endl;
+        std::cout << "  create [title]                 " << clijudge::lang::tr("problem.create", "Create problem") << std::endl;
         std::cout << "    options: -type -compare -spj-code -spj-exe -float-abs -float-rel" << std::endl;
         std::cout << "             -subtask-mode -answer-ext -source-name -dependence" << std::endl;
         std::cout << "             -interactor -grader -background -describe -exampleio" << std::endl;
-        std::cout << "  delete [id]                    Delete problem" << std::endl;
-        std::cout << "  edit [id]                      Edit problem (same options as create)" << std::endl;
-        std::cout << "  export [zip_path]              Export problem" << std::endl;
-        std::cout << "  import [zip_path]              Import problem" << std::endl;
-        std::cout << "  list [L=1] [R=50]              List problems" << std::endl;
-        std::cout << "  submit [id] [file] [--as user] Submit solution" << std::endl;
-        std::cout << "  testdata [id]                  Test data management" << std::endl;
-        std::cout << "    -set-all                     Set all test data defaults" << std::endl;
-        std::cout << "    -zip [zip_path]              Import test data from zip" << std::endl;
-        std::cout << "    create [in] [out] [time] [mem] [pts]  Create test case" << std::endl;
-        std::cout << "    delete [id]                  Delete test case" << std::endl;
-        std::cout << "    list                         List test cases" << std::endl;
-        std::cout << "  view [id]                      View problem" << std::endl;
+        std::cout << "  delete [id]                    " << clijudge::lang::tr("problem.delete", "Delete problem") << std::endl;
+        std::cout << "  edit [id]                      " << clijudge::lang::tr("problem.edit", "Edit problem (same options as create)") << std::endl;
+        std::cout << "  export [zip_path]              " << clijudge::lang::tr("problem.export", "Export problem") << std::endl;
+        std::cout << "  import [zip_path]              " << clijudge::lang::tr("problem.import", "Import problem") << std::endl;
+        std::cout << "  list [L=1] [R=50]              " << clijudge::lang::tr("problem.list", "List problems") << std::endl;
+        std::cout << "  submit [id] [file] [--as user] " << clijudge::lang::tr("problem.submit", "Submit solution") << std::endl;
+        std::cout << "  testdata [id]                  " << clijudge::lang::tr("problem.testdata", "Test data management") << std::endl;
+        std::cout << "    -set-all                     " << clijudge::lang::tr("problem.set_all", "Set all test data defaults") << std::endl;
+        std::cout << "    -zip [zip_path]              " << clijudge::lang::tr("problem.import_zip", "Import test data from zip") << std::endl;
+        std::cout << "    create [in] [out] [time] [mem] [pts]  " << clijudge::lang::tr("problem.create_test", "Create test case") << std::endl;
+        std::cout << "    delete [id]                  " << clijudge::lang::tr("problem.delete_test", "Delete test case") << std::endl;
+        std::cout << "    list                         " << clijudge::lang::tr("problem.list_test", "List test cases") << std::endl;
+        std::cout << "  view [id]                      " << clijudge::lang::tr("problem.view", "View problem") << std::endl;
     } else if (command == "submit") {
-        std::cout << "Submit Commands:" << std::endl;
-        std::cout << "  count                          Count submissions" << std::endl;
-        std::cout << "  list [L=1] [R=50]              List submissions" << std::endl;
-        std::cout << "  rejudge [id]                   Rejudge submission" << std::endl;
+        std::cout << clijudge::lang::tr("submit.commands", "Submit Commands:") << std::endl;
+        std::cout << "  count                          " << clijudge::lang::tr("submit.count", "Count submissions") << std::endl;
+        std::cout << "  list [L=1] [R=50]              " << clijudge::lang::tr("submit.list", "List submissions") << std::endl;
+        std::cout << "  rejudge [id]                   " << clijudge::lang::tr("submit.rejudge", "Rejudge submission") << std::endl;
     } else if (command == "displaylang") {
-        std::cout << "Display Language Commands:" << std::endl;
-        std::cout << "  list                           List local languages" << std::endl;
-        std::cout << "  list --online                  List online languages" << std::endl;
-        std::cout << "  switch [langname]              Switch display language" << std::endl;
-        std::cout << "  delete [langname]              Delete local language" << std::endl;
-        std::cout << "  pull [langname]                Pull language (no switch)" << std::endl;
+        std::cout << clijudge::lang::tr("displaylang.commands", "Display Language Commands:") << std::endl;
+        std::cout << "  list                           " << clijudge::lang::tr("displaylang.list", "List local languages") << std::endl;
+        std::cout << "  list --online                  " << clijudge::lang::tr("displaylang.list_online", "List online languages") << std::endl;
+        std::cout << "  switch [langname]              " << clijudge::lang::tr("displaylang.switch", "Switch display language") << std::endl;
+        std::cout << "  delete [langname]              " << clijudge::lang::tr("displaylang.delete", "Delete local language") << std::endl;
+        std::cout << "  pull [langname]                " << clijudge::lang::tr("displaylang.pull", "Pull language (no switch)") << std::endl;
     } else {
         showHelp();
     }
@@ -222,7 +207,7 @@ int main(int argc, char* argv[]) {
             return clijudge::article::cmdCount(dataDir);
         } else if (subCmd == "create") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe article create [title] [md_file]" << std::endl;
+                std::cerr << "Usage: clijudge.exe article create [title] [md_file]" << std::endl;
                 return 1;
             }
             std::string title = argv[3];
@@ -230,7 +215,7 @@ int main(int argc, char* argv[]) {
             return clijudge::article::cmdCreate(dataDir, title, mdFile);
         } else if (subCmd == "delete") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe article delete [id]" << std::endl;
+                std::cerr << "Usage: clijudge.exe article delete [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -241,7 +226,7 @@ int main(int argc, char* argv[]) {
             return clijudge::article::cmdList(dataDir, L, R);
         } else if (subCmd == "view") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe article view [id]" << std::endl;
+                std::cerr << "Usage: clijudge.exe article view [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -266,7 +251,7 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (subCmd == "create") {
             if (argc < 7) {
-                std::cerr << "Usage: judgelite.exe contest create [title] [start] [end] [prob1] [prob2]" << std::endl;
+                std::cerr << "Usage: clijudge.exe contest create [title] [start] [end] [prob1] [prob2]" << std::endl;
                 return 1;
             }
             std::string title = argv[3];
@@ -279,14 +264,14 @@ int main(int argc, char* argv[]) {
             return judgelite::contest::cmdCreate(dataDir, title, startTime, endTime, problemIds);
         } else if (subCmd == "delete") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe contest delete [id]" << std::endl;
+                std::cerr << "Usage: clijudge.exe contest delete [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
             return judgelite::contest::cmdDelete(dataDir, id);
         } else if (subCmd == "problem") {
             if (argc < 5) {
-                std::cerr << "Usage: judgelite.exe contest problem [id] [prob_index] [submit|view]" << std::endl;
+                std::cerr << "Usage: clijudge.exe contest problem [id] [prob_index] [submit|view]" << std::endl;
                 return 1;
             }
             int contestId = parseInt(argv[3]);
@@ -295,7 +280,7 @@ int main(int argc, char* argv[]) {
                 std::string action = argv[5];
                 if (action == "submit") {
                     if (argc < 7) {
-                        std::cerr << "Usage: judgelite.exe contest problem [id] [prob_index] submit [file] [--as username]" << std::endl;
+                        std::cerr << "Usage: clijudge.exe contest problem [id] [prob_index] submit [file] [--as username]" << std::endl;
                         return 1;
                     }
                     std::string filePath = argv[6];
@@ -314,7 +299,7 @@ int main(int argc, char* argv[]) {
             return 1;
         } else if (subCmd == "view") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe contest view [id]" << std::endl;
+                std::cerr << "Usage: clijudge.exe contest view [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -323,14 +308,14 @@ int main(int argc, char* argv[]) {
             return judgelite::contest::cmdList(dataDir);
         } else if (subCmd == "leaderboard") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe contest leaderboard [id]" << std::endl;
+                std::cerr << "Usage: clijudge.exe contest leaderboard [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
             return judgelite::contest::cmdLeaderboard(dataDir, id);
         } else if (subCmd == "report") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe contest report [id] [out_html]" << std::endl;
+                std::cerr << "Usage: clijudge.exe contest report [id] [out_html]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -338,14 +323,14 @@ int main(int argc, char* argv[]) {
             return judgelite::contest::cmdReport(dataDir, id, outPath);
         } else if (subCmd == "import") {
             if (argc < 4) {
-                std::cerr << "用法: judgelite.exe contest import [cdf文件路径]" << std::endl;
+                std::cerr << "用法: clijudge.exe contest import [cdf文件路径]" << std::endl;
                 return 1;
             }
             std::string cdfPath = argv[3];
             return judgelite::contest::cmdImportCdf(dataDir, cdfPath);
         } else if (subCmd == "export") {
             if (argc < 5) {
-                std::cerr << "用法: judgelite.exe contest export [编号] [cdf文件路径]" << std::endl;
+                std::cerr << "用法: clijudge.exe contest export [编号] [cdf文件路径]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -371,7 +356,7 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (subCmd == "run") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe ide run [code] [input]" << std::endl;
+                std::cerr << "Usage: clijudge.exe ide run [code] [input]" << std::endl;
                 return 1;
             }
             std::string codePath = argv[3];
@@ -399,7 +384,7 @@ int main(int argc, char* argv[]) {
             return judgelite::problem::cmdCount(dataDir);
         } else if (subCmd == "create") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe problem create [title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem create [title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
                 return 1;
             }
             std::string title = argv[3];
@@ -458,14 +443,14 @@ int main(int argc, char* argv[]) {
                                                   interactorFile, graderDir);
         } else if (subCmd == "delete") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe problem delete [id]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem delete [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
             return judgelite::problem::cmdDelete(dataDir, id);
         } else if (subCmd == "edit") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe problem edit [id] [-title title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem edit [id] [-title title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -526,7 +511,7 @@ int main(int argc, char* argv[]) {
                                                interactorFile, graderDir);
         } else if (subCmd == "view") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe problem view [id]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem view [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -537,7 +522,7 @@ int main(int argc, char* argv[]) {
             return judgelite::problem::cmdList(dataDir, L, R);
         } else if (subCmd == "submit") {
             if (argc < 5) {
-                std::cerr << "Usage: judgelite.exe problem submit [id] [file] [--as username]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem submit [id] [file] [--as username]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -551,7 +536,7 @@ int main(int argc, char* argv[]) {
             return judgelite::problem::cmdSubmit(dataDir, id, filePath, username);
         } else if (subCmd == "export") {
             if (argc < 5) {
-                std::cerr << "Usage: judgelite.exe problem export [id] [zip_path]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem export [id] [zip_path]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -559,14 +544,14 @@ int main(int argc, char* argv[]) {
             return judgelite::problem::cmdExport(dataDir, id, zipPath);
         } else if (subCmd == "import") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe problem import [zip_path]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem import [zip_path]" << std::endl;
                 return 1;
             }
             std::string zipPath = argv[3];
             return judgelite::problem::cmdImport(dataDir, zipPath);
         } else if (subCmd == "testdata") {
             if (argc < 4) {
-                std::cerr << "Usage: judgelite.exe problem testdata [id] [command]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem testdata [id] [command]" << std::endl;
                 return 1;
             }
             int problemId = parseInt(argv[3]);
@@ -578,7 +563,7 @@ int main(int argc, char* argv[]) {
                 return judgelite::problem::cmdTestDataList(dataDir, problemId);
             } else if (tcCmd == "create") {
                 if (argc < 7) {
-                    std::cerr << "Usage: judgelite.exe problem testdata [id] create [in] [out] [time] [mem] [pts]" << std::endl;
+                    std::cerr << "Usage: clijudge.exe problem testdata [id] create [in] [out] [time] [mem] [pts]" << std::endl;
                     return 1;
                 }
                 std::string inputData = argv[5];
@@ -589,7 +574,7 @@ int main(int argc, char* argv[]) {
                 return judgelite::problem::cmdTestDataCreate(dataDir, problemId, inputData, outputData, timeLimit, memoryLimit, score);
             } else if (tcCmd == "delete") {
                 if (argc < 6) {
-                    std::cerr << "Usage: judgelite.exe problem testdata [id] delete [tc_id]" << std::endl;
+                    std::cerr << "Usage: clijudge.exe problem testdata [id] delete [tc_id]" << std::endl;
                     return 1;
                 }
                 int tcId = parseInt(argv[5]);
@@ -608,7 +593,7 @@ int main(int argc, char* argv[]) {
                 return judgelite::problem::cmdTestDataSetAll(dataDir, problemId, timeLimit, memoryLimit, score);
             } else if (tcCmd == "-zip") {
                 if (argc < 6) {
-                    std::cerr << "Usage: judgelite.exe problem testdata [id] -zip [zip_path]" << std::endl;
+                    std::cerr << "Usage: clijudge.exe problem testdata [id] -zip [zip_path]" << std::endl;
                     return 1;
                 }
                 std::string zipPath = argv[5];

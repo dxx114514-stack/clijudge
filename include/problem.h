@@ -941,11 +941,11 @@ inline int cmdSubmit(const std::string& dataDir, int problemId, const std::strin
                                      username, submission.judgeDetail);
 
     std::cout << "=== Submission Result ===" << std::endl;
-    std::cout << "Status: " << submission.status << std::endl;
-    std::cout << "Score: " << submission.score << std::endl;
-    std::cout << "Time: " << submission.timeUsed << " ms" << std::endl;
-    std::cout << "Memory: " << submission.memoryUsed << " KB" << std::endl;
-    std::cout << "User: " << (username.empty() ? "unknown" : username) << std::endl;
+    std::cout << clijudge::lang::tr("judge.status", "Status") << ": " << submission.status << std::endl;
+    std::cout << clijudge::lang::tr("judge.score", "Score") << ": " << submission.score << std::endl;
+    std::cout << clijudge::lang::tr("judge.time", "Time") << ": " << submission.timeUsed << " ms" << std::endl;
+    std::cout << clijudge::lang::tr("judge.memory", "Memory") << ": " << submission.memoryUsed << " KB" << std::endl;
+    std::cout << clijudge::lang::tr("judge.user", "User") << ": " << (username.empty() ? "unknown" : username) << std::endl;
 
     return (submission.status == "AC") ? 0 : 1;
 }
@@ -997,10 +997,10 @@ inline int cmdRejudge(const std::string& dataDir, int submissionId) {
 
     std::cout << "=== Rejudge Result ===" << std::endl;
     std::cout << "Submission: " << submissionId << std::endl;
-    std::cout << "Status: " << submission.status << std::endl;
-    std::cout << "Score: " << submission.score << std::endl;
-    std::cout << "Time: " << submission.timeUsed << " ms" << std::endl;
-    std::cout << "Memory: " << submission.memoryUsed << " KB" << std::endl;
+    std::cout << clijudge::lang::tr("judge.status", "Status") << ": " << submission.status << std::endl;
+    std::cout << clijudge::lang::tr("judge.score", "Score") << ": " << submission.score << std::endl;
+    std::cout << clijudge::lang::tr("judge.time", "Time") << ": " << submission.timeUsed << " ms" << std::endl;
+    std::cout << clijudge::lang::tr("judge.memory", "Memory") << ": " << submission.memoryUsed << " KB" << std::endl;
     std::cout << "Judge times: " << (judgeTimes + 1) << std::endl;
     return (submission.status == "AC") ? 0 : 1;
 }

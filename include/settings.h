@@ -37,9 +37,9 @@ namespace settings {
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
-// 配置文件路径（与 lang.h getConfigPath 保持一致）
+// 配置文件路径（与 lang.h getConfigPath 保持一致：统一走 platform::dataDir）
 inline std::string configPath() {
-    return platform::pathJoin(platform::pathJoin(platform::exeDir(), "data"), "config.json");
+    return platform::pathJoin(platform::dataDir(), "config.json");
 }
 
 // 评测设置

@@ -58,6 +58,7 @@
 #include "platform.h"
 #include "sandbox_runner.hpp"
 #include "settings.h"
+#include "lang.h"
 #include "miniz/miniz.h"
 
 namespace clijudge {
@@ -158,6 +159,27 @@ inline std::string statusToAbbr(JudgeStatus s) {
         case JudgeStatus::INTERACTOR_ERROR: return "IE";
         default: return "??";
     }
+}
+
+// 状态转本地化字符串（用于控制台显示；statusToString/statusToAbbr 保持稳定供数据与缩写使用）
+inline std::string statusToDisplay(JudgeStatus s) {
+    std::string fallback = statusToString(s);
+    const char* key = nullptr;
+    switch (s) {
+        case JudgeStatus::ACCEPTED: key = "judge.accepted"; break;
+        case JudgeStatus::WRONG_ANSWER: key = "judge.wrong_answer"; break;
+        case JudgeStatus::TIME_LIMIT_EXCEEDED: key = "judge.time_limit"; break;
+        case JudgeStatus::MEMORY_LIMIT_EXCEEDED: key = "judge.memory_limit"; break;
+        case JudgeStatus::RUNTIME_ERROR: key = "judge.runtime_error"; break;
+        case JudgeStatus::COMPILATION_ERROR: key = "judge.compile_error"; break;
+        case JudgeStatus::SYSTEM_ERROR: key = "judge.system_error"; break;
+        case JudgeStatus::SKIPPED: key = "judge.skipped"; break;
+        default: break;
+    }
+    if (key) {
+        return clijudge::lang::tr(key, fallback);
+    }
+    return fallback;
 }
 
 // ── 文件读取工具 ─────────────────────────────────────────────
@@ -1956,11 +1978,12 @@ inline json resultToJson(const JudgeResult& result) {
 // ── 显示评判结果 ─────────────────────────────────────────────
 inline void printResult(const JudgeResult& result) {
     std::cout << "=== Judge Result ===" << std::endl;
-    std::cout << "Score: " << result.totalScore << " / " << result.maxScore << std::endl;
-    std::cout << "Status: " << statusToAbbr(result.status)
-              << " (" << statusToString(result.status) << ")" << std::endl;
-    std::cout << "Time: " << result.totalTimeMs << " ms" << std::endl;
-    std::cout << "Memory: " << result.maxMemoryKB << " KB" << std::endl;
+    std::cout << clijudge::lang::tr("judge.score", "Score") << ": "
+              << result.totalScore << " / " << result.maxScore << std::endl;
+    std::cout << clijudge::lang::tr("judge.status", "Status") << ": " << statusToAbbr(result.status)
+              << " (" << statusToDisplay(result.status) << ")" << std::endl;
+    std::cout << clijudge::lang::tr("judge.time", "Time") << ": " << result.totalTimeMs << " ms" << std::endl;
+    std::cout << clijudge::lang::tr("judge.memory", "Memory") << ": " << result.maxMemoryKB << " KB" << std::endl;
 
     if (!result.compileError.empty()) {
         std::cout << "Compile Error: " << result.compileError << std::endl;
@@ -1968,8 +1991,9 @@ inline void printResult(const JudgeResult& result) {
 
     for (const auto& st : result.subtasks) {
         std::cout << "\n--- Subtask " << st.id << " ---" << std::endl;
-        std::cout << "Score: " << st.score << " / " << st.maxScore << std::endl;
-        std::cout << "Status: " << statusToAbbr(st.status) << std::endl;
+        std::cout << clijudge::lang::tr("judge.score", "Score") << ": "
+                  << st.score << " / " << st.maxScore << std::endl;
+        std::cout << clijudge::lang::tr("judge.status", "Status") << ": " << statusToAbbr(st.status) << std::endl;
 
         for (const auto& tc : st.testCases) {
             std::cout << "  Test " << tc.id << ": " << statusToAbbr(tc.status)
