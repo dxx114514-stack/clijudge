@@ -27,6 +27,8 @@
 #include <sstream>
 #include <iostream>
 #include <algorithm>
+#include <map>
+#include <utility>
 #include <filesystem>
 #include <cstdlib>
 #include <cstring>
@@ -34,6 +36,7 @@
 #include "sandbox_runner.hpp"
 #include "submit.h"
 #include "judge.h"
+#include "miniz/miniz.h"
 
 namespace judgelite {
 namespace problem {
@@ -513,6 +516,59 @@ inline std::string getCurrentTimeISO() {
     return std::string(buf);
 }
 
+// ── ZIP 辅助 ─────────────────────────────────────────────────
+
+// 从 ZIP 中读取指定条目内容
+inline bool zipReadEntry(const std::string& zipPath, const std::string& entryName, std::string& out) {
+    mz_zip_archive zip{};
+    if (!mz_zip_reader_init_file(&zip, zipPath.c_str(), 0)) return false;
+    size_t size = 0;
+    void* data = mz_zip_reader_extract_file_to_heap(&zip, entryName.c_str(), &size, 0);
+    mz_zip_reader_end(&zip);
+    if (!data) return false;
+    out.assign(static_cast<char*>(data), size);
+    mz_free(data);
+    return true;
+}
+
+// 列出 ZIP 中所有条目名
+inline std::vector<std::string> zipListEntries(const std::string& zipPath) {
+    std::vector<std::string> entries;
+    mz_zip_archive zip{};
+    if (!mz_zip_reader_init_file(&zip, zipPath.c_str(), 0)) return entries;
+    mz_uint count = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint i = 0; i < count; i++) {
+        mz_zip_archive_file_stat st;
+        if (!mz_zip_reader_file_stat(&zip, i, &st)) continue;
+        if (st.m_is_directory) continue;
+        entries.push_back(st.m_filename);
+    }
+    mz_zip_reader_end(&zip);
+    return entries;
+}
+
+// 创建 ZIP 并写入多个条目（内存中的 name -> content 映射）
+inline bool zipCreate(const std::string& zipPath,
+                      const std::vector<std::pair<std::string, std::string>>& files) {
+    mz_zip_archive zip{};
+    if (!mz_zip_writer_init_file(&zip, zipPath.c_str(), 0)) return false;
+    bool ok = true;
+    for (const auto& [name, content] : files) {
+        if (!mz_zip_writer_add_mem(&zip, name.c_str(), content.data(), content.size(),
+                                   MZ_DEFAULT_COMPRESSION)) {
+            ok = false;
+            break;
+        }
+    }
+    if (ok) ok = mz_zip_writer_finalize_archive(&zip);
+    mz_zip_writer_end(&zip);
+    if (!ok) {
+        std::error_code ec;
+        fs::remove(zipPath, ec);
+    }
+    return ok;
+}
+
 inline int cmdCount(const std::string& dataDir) {
     ProblemStore store(dataDir);
     std::cout << store.count() << std::endl;
@@ -837,6 +893,87 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     }
 }
 
+// 从 ZIP 导入测试数据（配对 *.in 与 *.out/*.ans）
+inline int cmdTestDataImportZip(const std::string& dataDir, int problemId,
+                                const std::string& zipPath,
+                                int timeLimit = -1, int memoryLimit = -1, int score = 25) {
+    if (!fs::exists(zipPath)) {
+        std::cerr << "Zip file not found: " << zipPath << std::endl;
+        return 1;
+    }
+
+    std::vector<std::string> entries = zipListEntries(zipPath);
+    if (entries.empty()) {
+        std::cerr << "No entries found in zip: " << zipPath << std::endl;
+        return 1;
+    }
+
+    // 收集 .in 文件，配对同名 .out/.ans
+    std::map<std::string, std::string> inFiles;   // basename -> entry
+    std::map<std::string, std::string> outFiles;  // basename -> entry
+    for (const auto& entry : entries) {
+        std::string name = fs::path(entry).filename().string();
+        std::string stem = fs::path(name).stem().string();
+        std::string ext = fs::path(name).extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".in") {
+            inFiles[stem] = entry;
+        } else if (ext == ".out" || ext == ".ans") {
+            outFiles[stem] = entry;
+        }
+    }
+
+    if (inFiles.empty()) {
+        std::cerr << "No .in files found in zip." << std::endl;
+        return 1;
+    }
+
+    ProblemStore store(dataDir);
+    json testCases = store.getTestCases(problemId);
+    int nextId = testCases.empty() ? 1 : testCases.back().value("id", 0) + 1;
+    int sortOrder = nextId;
+    int imported = 0;
+
+    for (const auto& [stem, inEntry] : inFiles) {
+        auto outIt = outFiles.find(stem);
+        if (outIt == outFiles.end()) {
+            std::cerr << "Warning: no matching .out/.ans for " << stem << ", skipped." << std::endl;
+            continue;
+        }
+
+        std::string inContent, outContent;
+        if (!zipReadEntry(zipPath, inEntry, inContent) ||
+            !zipReadEntry(zipPath, outIt->second, outContent)) {
+            std::cerr << "Warning: failed to extract " << stem << ", skipped." << std::endl;
+            continue;
+        }
+
+        TestCase tc;
+        tc.id = nextId++;
+        tc.inputData = inContent;
+        tc.outputData = outContent;
+        tc.inputFile = "";
+        tc.outputFile = "";
+        tc.score = score;
+        tc.timeLimit = timeLimit;
+        tc.memoryLimit = memoryLimit;
+        tc.sortOrder = sortOrder++;
+        tc.subtaskId = 1;
+
+        if (store.addTestCase(problemId, tc)) {
+            std::cout << "Test case imported: " << stem << " (ID: " << tc.id << ")" << std::endl;
+            imported++;
+        }
+    }
+
+    if (imported == 0) {
+        std::cerr << "No test cases imported." << std::endl;
+        return 1;
+    }
+    std::cout << "Imported " << imported << " test case(s)." << std::endl;
+    return 0;
+}
+
 inline int cmdTestDataDelete(const std::string& dataDir, int problemId, int testCaseId) {
     ProblemStore store(dataDir);
     if (store.deleteTestCase(problemId, testCaseId)) {
@@ -901,9 +1038,36 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
     }
 
     if (isZip) {
-        // ZIP 格式导出（需要 miniz 库支持）
-        std::cerr << "ZIP export requires miniz library. Use .json format instead." << std::endl;
-        return 1;
+        // ZIP 格式导出：problem.json + testdata/*.in|*.out
+        json zipData = exportData;
+        std::vector<std::pair<std::string, std::string>> files;
+
+        json zipTestCases = json::array();
+        for (const auto& tc : zipData["test_cases"]) {
+            json tcCopy = tc;
+            std::string name = tcCopy.value("name", "case");
+            std::string inData = tcCopy.value("input_data", "");
+            std::string outData = tcCopy.value("output_data", "");
+            tcCopy.erase("input_data");
+            tcCopy.erase("output_data");
+            tcCopy["input_file"] = "testdata/" + name + ".in";
+            tcCopy["output_file"] = "testdata/" + name + ".out";
+            zipTestCases.push_back(tcCopy);
+            files.emplace_back("testdata/" + name + ".in", inData);
+            files.emplace_back("testdata/" + name + ".out", outData);
+        }
+        zipData["test_cases"] = zipTestCases;
+
+        std::string jsonContent = zipData.dump(2);
+        files.insert(files.begin(), {"problem.json", jsonContent});
+
+        if (zipCreate(outputPath, files)) {
+            std::cout << "Problem exported to: " << outputPath << std::endl;
+            return 0;
+        } else {
+            std::cerr << "Failed to create export file: " << outputPath << std::endl;
+            return 1;
+        }
     }
 
     // JSON 格式导出
@@ -934,8 +1098,62 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
     }
 
     if (isZip) {
-        std::cerr << "ZIP import requires miniz library. Use .json format instead." << std::endl;
-        return 1;
+        // ZIP 格式导入：读取 problem.json 并解析 testdata 引用
+        std::string jsonContent;
+        if (!zipReadEntry(importPath, "problem.json", jsonContent)) {
+            std::cerr << "No problem.json found in zip: " << importPath << std::endl;
+            return 1;
+        }
+
+        json problemData;
+        try {
+            problemData = json::parse(jsonContent);
+        } catch (const json::parse_error& e) {
+            std::cerr << "Failed to parse problem.json in zip: " << e.what() << std::endl;
+            return 1;
+        }
+
+        // 解析 input_file/output_file 引用
+        if (problemData.contains("test_cases")) {
+            for (auto& tc : problemData["test_cases"]) {
+                std::string inData = tc.value("input_data", "");
+                std::string outData = tc.value("output_data", "");
+                if (inData.empty() && tc.contains("input_file")) {
+                    std::string entry = tc["input_file"].get<std::string>();
+                    std::string content;
+                    if (zipReadEntry(importPath, entry, content)) {
+                        inData = content;
+                    } else {
+                        std::cerr << "Missing zip entry: " << entry << std::endl;
+                        return 1;
+                    }
+                }
+                if (outData.empty() && tc.contains("output_file")) {
+                    std::string entry = tc["output_file"].get<std::string>();
+                    std::string content;
+                    if (zipReadEntry(importPath, entry, content)) {
+                        outData = content;
+                    } else {
+                        std::cerr << "Missing zip entry: " << entry << std::endl;
+                        return 1;
+                    }
+                }
+                tc["input_data"] = inData;
+                tc["output_data"] = outData;
+                tc.erase("input_file");
+                tc.erase("output_file");
+            }
+        }
+
+        ProblemStore store(dataDir);
+        int id = store.importProblem(problemData);
+        if (id > 0) {
+            std::cout << "Problem imported with ID: " << id << std::endl;
+            return 0;
+        } else {
+            std::cerr << "Failed to import problem." << std::endl;
+            return 1;
+        }
     }
 
     std::ifstream f(importPath);

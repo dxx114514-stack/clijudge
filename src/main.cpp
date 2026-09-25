@@ -49,6 +49,7 @@
 #include <cstring>
 #include <filesystem>
 #include "json.hpp"
+#include "miniz_impl.h"
 #include "article.h"
 #include "contest.h"
 #include "ide.h"
@@ -551,9 +552,7 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
                 std::string zipPath = argv[5];
-                // TODO: 实现从zip导入测试数据
-                std::cerr << "ZIP import not yet implemented." << std::endl;
-                return 1;
+                return judgelite::problem::cmdTestDataImportZip(dataDir, problemId, zipPath);
             } else {
                 std::cerr << "Unknown testdata command: " << tcCmd << std::endl;
                 return 1;
