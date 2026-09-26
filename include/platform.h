@@ -95,13 +95,10 @@ inline std::string pathJoin(const std::string& a, const std::string& b) {
     return (fs::path(a) / b).string();
 }
 
-// 数据目录（环境变量 CLIJUDGE_DATA_DIR/JUDGELITE_DATA_DIR 优先，其次 exe 目录/data）
+// 数据目录（环境变量 CLIJUDGE_DATA_DIR 优先，其次 exe 目录/data）
 // lang.h、settings.h、main.cpp 统一使用此函数
 inline std::string dataDir() {
     const char* env = std::getenv("CLIJUDGE_DATA_DIR");
-    if (!env || !env[0]) {
-        env = std::getenv("JUDGELITE_DATA_DIR"); // 兼容旧变量名
-    }
     if (env && env[0]) {
         return std::string(env);
     }
@@ -110,6 +107,46 @@ inline std::string dataDir() {
         return pathJoin(exe, "data");
     }
     return pathJoin(".", "data");
+}
+
+// 旧版平铺布局迁移（幂等）：data/*.json → data/<类别>/*.json
+// problems.json/problem_*.json → problems/；articles.json/article_*.json → articles/；
+// contests.json/contest_*.json → contests/；submissions.json → submissions/
+// 每次启动执行一次：目标已存在则跳过，失败保留原位下次重试
+inline void migrateFlatLayout(const std::string& dataDir) {
+    std::error_code ec;
+    if (!fs::is_directory(dataDir, ec)) return;
+    auto startsWith = [](const std::string& s, const std::string& pre) {
+        return s.size() >= pre.size() && s.compare(0, pre.size(), pre) == 0;
+    };
+    auto endsWith = [](const std::string& s, const std::string& suf) {
+        return s.size() >= suf.size() &&
+               s.compare(s.size() - suf.size(), suf.size(), suf) == 0;
+    };
+    auto targetSubdir = [&](const std::string& name) -> std::string {
+        if (name == "problems.json") return "problems";
+        if (name == "articles.json") return "articles";
+        if (name == "contests.json") return "contests";
+        if (name == "submissions.json") return "submissions";
+        if (!endsWith(name, ".json")) return "";
+        if (startsWith(name, "problem_")) return "problems";
+        if (startsWith(name, "article_")) return "articles";
+        if (startsWith(name, "contest_")) return "contests";
+        return "";
+    };
+    for (fs::directory_iterator it(dataDir, ec), end; it != end; it.increment(ec)) {
+        if (ec) break;
+        std::error_code ec2;
+        if (!it->is_regular_file(ec2)) continue;
+        std::string name = it->path().filename().string();
+        std::string sub = targetSubdir(name);
+        if (sub.empty()) continue;
+        fs::path destDir = fs::path(dataDir) / sub;
+        fs::path dest = destDir / name;
+        if (fs::exists(dest, ec2)) continue;
+        fs::create_directories(destDir, ec2);
+        fs::rename(it->path(), dest, ec2);
+    }
 }
 
 // 可执行文件扩展名

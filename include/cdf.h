@@ -1,5 +1,5 @@
-#ifndef JUDGELITE_CDF_H
-#define JUDGELITE_CDF_H
+#ifndef CLIJUDGE_CDF_H
+#define CLIJUDGE_CDF_H
 
 // cdf.h
 // LemonLime CDF (Contest Data Format) 导入导出支持
@@ -31,7 +31,7 @@
 #include <algorithm>
 #include "json.hpp"
 
-namespace judgelite {
+namespace clijudge {
 namespace cdf {
 
 using json = nlohmann::json;
@@ -202,8 +202,8 @@ inline CdfContest parseCdf(const std::string& cdfPath) {
     return contest;
 }
 
-// CDF ComparisonMode 转 JudgeLite compare_mode
-inline std::string comparisonModeToJudgeLite(int mode) {
+// CDF ComparisonMode 转 CliJudge compare_mode
+inline std::string comparisonModeToCliJudge(int mode) {
     switch (mode) {
         case 0: return "text_strict";
         case 1: return "text_no_space";
@@ -215,8 +215,8 @@ inline std::string comparisonModeToJudgeLite(int mode) {
     }
 }
 
-// JudgeLite compare_mode 转 CDF ComparisonMode (导出用)
-inline int judgeLiteToComparisonMode(const std::string& mode) {
+// CliJudge compare_mode 转 CDF ComparisonMode (导出用)
+inline int cliJudgeToComparisonMode(const std::string& mode) {
     if (mode == "text_no_space") return 1;
     if (mode == "text_line") return 0;
     if (mode == "float_abs" || mode == "float_rel" || mode == "float_all") return 3;
@@ -226,8 +226,8 @@ inline int judgeLiteToComparisonMode(const std::string& mode) {
     return 4;
 }
 
-// CDF TaskType 转 JudgeLite problem_type
-inline std::string taskTypeToJudgeLite(int type) {
+// CDF TaskType 转 CliJudge problem_type
+inline std::string taskTypeToCliJudge(int type) {
     switch (type) {
         case 0: return "traditional";
         case 1: return "answers_only";
@@ -238,8 +238,8 @@ inline std::string taskTypeToJudgeLite(int type) {
     }
 }
 
-// JudgeLite problem_type 转 CDF TaskType (导出用)
-inline int judgeLiteToTaskType(const std::string& type) {
+// CliJudge problem_type 转 CDF TaskType (导出用)
+inline int cliJudgeToTaskType(const std::string& type) {
     if (type == "answers_only") return 1;
     if (type == "interaction") return 2;
     if (type == "communication") return 3;
@@ -295,6 +295,6 @@ inline json taskToJson(const CdfTask& task) {
 }
 
 } // namespace cdf
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_CDF_H
+#endif // CLIJUDGE_CDF_H

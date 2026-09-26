@@ -43,17 +43,15 @@ private:
     json data;
 
     void ensureDataDir() {
-        if (!fs::exists(dataDir)) {
-            fs::create_directories(dataDir);
-        }
+        fs::create_directories(dataDir + "/articles");
     }
 
     std::string getArticlePath(int id) {
-        return dataDir + "/article_" + std::to_string(id) + ".json";
+        return dataDir + "/articles/article_" + std::to_string(id) + ".json";
     }
 
     void loadIndex() {
-        std::string indexPath = dataDir + "/articles.json";
+        std::string indexPath = dataDir + "/articles/articles.json";
         if (fs::exists(indexPath)) {
             std::ifstream f(indexPath);
             if (f.is_open()) {
@@ -75,7 +73,7 @@ private:
 
     void saveIndex() {
         ensureDataDir();
-        std::string indexPath = dataDir + "/articles.json";
+        std::string indexPath = dataDir + "/articles/articles.json";
         std::ofstream f(indexPath);
         if (f.is_open()) {
             f << data.dump(2);

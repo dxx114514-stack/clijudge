@@ -1,5 +1,5 @@
 // main.cpp
-// JudgeLite 轻量级命令行在线评测系统主入口
+// CliJudge 轻量级命令行在线评测系统主入口
 //
 // 用法: clijudge.exe <子命令> [参数...]
 //
@@ -174,6 +174,9 @@ int main(int argc, char* argv[]) {
         fs::create_directories(dataDir);
     }
 
+    // 旧版平铺数据迁移到分类子目录（幂等）
+    clijudge::platform::migrateFlatLayout(dataDir);
+
     // 语言配置检查（displaylang 和 help 命令不需要检查）
     if (command != "displaylang" && command != "help") {
         if (!clijudge::lang::isLangConfigured()) {
@@ -261,14 +264,14 @@ int main(int argc, char* argv[]) {
             for (int i = 6; i < argc; i++) {
                 problemIds.push_back(parseInt(argv[i]));
             }
-            return judgelite::contest::cmdCreate(dataDir, title, startTime, endTime, problemIds);
+            return clijudge::contest::cmdCreate(dataDir, title, startTime, endTime, problemIds);
         } else if (subCmd == "delete") {
             if (argc < 4) {
                 std::cerr << "Usage: clijudge.exe contest delete [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::contest::cmdDelete(dataDir, id);
+            return clijudge::contest::cmdDelete(dataDir, id);
         } else if (subCmd == "problem") {
             if (argc < 5) {
                 std::cerr << "Usage: clijudge.exe contest problem [id] [prob_index] [submit|view]" << std::endl;
@@ -290,9 +293,9 @@ int main(int argc, char* argv[]) {
                             username = argv[++i];
                         }
                     }
-                    return judgelite::contest::cmdProblemSubmit(dataDir, contestId, probIndex, filePath, username);
+                    return clijudge::contest::cmdProblemSubmit(dataDir, contestId, probIndex, filePath, username);
                 } else if (action == "view") {
-                    return judgelite::contest::cmdProblemView(dataDir, contestId, probIndex);
+                    return clijudge::contest::cmdProblemView(dataDir, contestId, probIndex);
                 }
             }
             std::cerr << "Unknown contest problem action." << std::endl;
@@ -303,16 +306,16 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::contest::cmdView(dataDir, id);
+            return clijudge::contest::cmdView(dataDir, id);
         } else if (subCmd == "list") {
-            return judgelite::contest::cmdList(dataDir);
+            return clijudge::contest::cmdList(dataDir);
         } else if (subCmd == "leaderboard") {
             if (argc < 4) {
                 std::cerr << "Usage: clijudge.exe contest leaderboard [id]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::contest::cmdLeaderboard(dataDir, id);
+            return clijudge::contest::cmdLeaderboard(dataDir, id);
         } else if (subCmd == "report") {
             if (argc < 4) {
                 std::cerr << "Usage: clijudge.exe contest report [id] [out_html]" << std::endl;
@@ -320,14 +323,14 @@ int main(int argc, char* argv[]) {
             }
             int id = parseInt(argv[3]);
             std::string outPath = (argc > 4) ? argv[4] : "";
-            return judgelite::contest::cmdReport(dataDir, id, outPath);
+            return clijudge::contest::cmdReport(dataDir, id, outPath);
         } else if (subCmd == "import") {
             if (argc < 4) {
                 std::cerr << "用法: clijudge.exe contest import [cdf文件路径]" << std::endl;
                 return 1;
             }
             std::string cdfPath = argv[3];
-            return judgelite::contest::cmdImportCdf(dataDir, cdfPath);
+            return clijudge::contest::cmdImportCdf(dataDir, cdfPath);
         } else if (subCmd == "export") {
             if (argc < 5) {
                 std::cerr << "用法: clijudge.exe contest export [编号] [cdf文件路径]" << std::endl;
@@ -335,7 +338,7 @@ int main(int argc, char* argv[]) {
             }
             int id = parseInt(argv[3]);
             std::string cdfPath = argv[4];
-            return judgelite::contest::cmdExportCdf(dataDir, id, cdfPath);
+            return clijudge::contest::cmdExportCdf(dataDir, id, cdfPath);
         } else {
             std::cerr << "Unknown contest command: " << subCmd << std::endl;
             showCommandHelp("contest");
@@ -381,7 +384,7 @@ int main(int argc, char* argv[]) {
             showCommandHelp("problem");
             return 0;
         } else if (subCmd == "count") {
-            return judgelite::problem::cmdCount(dataDir);
+            return clijudge::problem::cmdCount(dataDir);
         } else if (subCmd == "create") {
             if (argc < 4) {
                 std::cerr << "Usage: clijudge.exe problem create [title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
@@ -434,7 +437,7 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            return judgelite::problem::cmdCreate(dataDir, title, background, describe,
+            return clijudge::problem::cmdCreate(dataDir, title, background, describe,
                                                   exampleIn, exampleOut, instyle, outstyle,
                                                   compareMode, spjCode, spjExe,
                                                   floatAbsTol, floatRelTol,
@@ -447,7 +450,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::problem::cmdDelete(dataDir, id);
+            return clijudge::problem::cmdDelete(dataDir, id);
         } else if (subCmd == "edit") {
             if (argc < 4) {
                 std::cerr << "Usage: clijudge.exe problem edit [id] [-title title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
@@ -502,7 +505,7 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            return judgelite::problem::cmdEdit(dataDir, id, title, background, describe,
+            return clijudge::problem::cmdEdit(dataDir, id, title, background, describe,
                                                exampleIn, exampleOut, instyle, outstyle,
                                                compareMode, spjCode, spjExe,
                                                floatAbsTol, floatRelTol,
@@ -515,11 +518,11 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::problem::cmdView(dataDir, id);
+            return clijudge::problem::cmdView(dataDir, id);
         } else if (subCmd == "list") {
             int L = (argc >= 4) ? parseInt(argv[3], 1) : 1;
             int R = (argc >= 5) ? parseInt(argv[4], 50) : 50;
-            return judgelite::problem::cmdList(dataDir, L, R);
+            return clijudge::problem::cmdList(dataDir, L, R);
         } else if (subCmd == "submit") {
             if (argc < 5) {
                 std::cerr << "Usage: clijudge.exe problem submit [id] [file] [--as username]" << std::endl;
@@ -533,7 +536,7 @@ int main(int argc, char* argv[]) {
                     username = argv[++i];
                 }
             }
-            return judgelite::problem::cmdSubmit(dataDir, id, filePath, username);
+            return clijudge::problem::cmdSubmit(dataDir, id, filePath, username);
         } else if (subCmd == "export") {
             if (argc < 5) {
                 std::cerr << "Usage: clijudge.exe problem export [id] [zip_path]" << std::endl;
@@ -541,14 +544,14 @@ int main(int argc, char* argv[]) {
             }
             int id = parseInt(argv[3]);
             std::string zipPath = argv[4];
-            return judgelite::problem::cmdExport(dataDir, id, zipPath);
+            return clijudge::problem::cmdExport(dataDir, id, zipPath);
         } else if (subCmd == "import") {
             if (argc < 4) {
                 std::cerr << "Usage: clijudge.exe problem import [zip_path]" << std::endl;
                 return 1;
             }
             std::string zipPath = argv[3];
-            return judgelite::problem::cmdImport(dataDir, zipPath);
+            return clijudge::problem::cmdImport(dataDir, zipPath);
         } else if (subCmd == "testdata") {
             if (argc < 4) {
                 std::cerr << "Usage: clijudge.exe problem testdata [id] [command]" << std::endl;
@@ -556,11 +559,11 @@ int main(int argc, char* argv[]) {
             }
             int problemId = parseInt(argv[3]);
             if (argc < 5) {
-                return judgelite::problem::cmdTestDataList(dataDir, problemId);
+                return clijudge::problem::cmdTestDataList(dataDir, problemId);
             }
             std::string tcCmd = argv[4];
             if (tcCmd == "list") {
-                return judgelite::problem::cmdTestDataList(dataDir, problemId);
+                return clijudge::problem::cmdTestDataList(dataDir, problemId);
             } else if (tcCmd == "create") {
                 if (argc < 7) {
                     std::cerr << "Usage: clijudge.exe problem testdata [id] create [in] [out] [time] [mem] [pts]" << std::endl;
@@ -571,14 +574,14 @@ int main(int argc, char* argv[]) {
                 int timeLimit = (argc >= 8) ? parseInt(argv[7], -1) : -1;
                 int memoryLimit = (argc >= 9) ? parseInt(argv[8], -1) : -1;
                 int score = (argc >= 10) ? parseInt(argv[9], 25) : 25;
-                return judgelite::problem::cmdTestDataCreate(dataDir, problemId, inputData, outputData, timeLimit, memoryLimit, score);
+                return clijudge::problem::cmdTestDataCreate(dataDir, problemId, inputData, outputData, timeLimit, memoryLimit, score);
             } else if (tcCmd == "delete") {
                 if (argc < 6) {
                     std::cerr << "Usage: clijudge.exe problem testdata [id] delete [tc_id]" << std::endl;
                     return 1;
                 }
                 int tcId = parseInt(argv[5]);
-                return judgelite::problem::cmdTestDataDelete(dataDir, problemId, tcId);
+                return clijudge::problem::cmdTestDataDelete(dataDir, problemId, tcId);
             } else if (tcCmd == "-set-all") {
                 int timeLimit = -1, memoryLimit = -1, score = -1;
                 for (int i = 5; i < argc; i++) {
@@ -590,14 +593,14 @@ int main(int argc, char* argv[]) {
                         score = parseInt(argv[++i]);
                     }
                 }
-                return judgelite::problem::cmdTestDataSetAll(dataDir, problemId, timeLimit, memoryLimit, score);
+                return clijudge::problem::cmdTestDataSetAll(dataDir, problemId, timeLimit, memoryLimit, score);
             } else if (tcCmd == "-zip") {
                 if (argc < 6) {
                     std::cerr << "Usage: clijudge.exe problem testdata [id] -zip [zip_path]" << std::endl;
                     return 1;
                 }
                 std::string zipPath = argv[5];
-                return judgelite::problem::cmdTestDataImportZip(dataDir, problemId, zipPath);
+                return clijudge::problem::cmdTestDataImportZip(dataDir, problemId, zipPath);
             } else {
                 std::cerr << "Unknown testdata command: " << tcCmd << std::endl;
                 return 1;
@@ -632,7 +635,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             int id = parseInt(argv[3]);
-            return judgelite::problem::cmdRejudge(dataDir, id);
+            return clijudge::problem::cmdRejudge(dataDir, id);
         } else {
             std::cerr << "Unknown submit command: " << subCmd << std::endl;
             showCommandHelp("submit");

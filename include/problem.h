@@ -1,8 +1,8 @@
-#ifndef JUDGELITE_PROBLEM_H
-#define JUDGELITE_PROBLEM_H
+#ifndef CLIJUDGE_PROBLEM_H
+#define CLIJUDGE_PROBLEM_H
 
 // problem.h
-// JudgeLite 题目管理子命令
+// CliJudge 题目管理子命令
 //
 // 子命令:
 //   count - 统计题目数量
@@ -39,7 +39,7 @@
 #include "judge.h"
 #include "miniz/miniz.h"
 
-namespace judgelite {
+namespace clijudge {
 namespace problem {
 
 using json = nlohmann::json;
@@ -107,17 +107,15 @@ private:
     json data;
 
     void ensureDataDir() {
-        if (!fs::exists(dataDir)) {
-            fs::create_directories(dataDir);
-        }
+        fs::create_directories(dataDir + "/problems");
     }
 
     std::string getProblemPath(int id) {
-        return dataDir + "/problem_" + std::to_string(id) + ".json";
+        return dataDir + "/problems/problem_" + std::to_string(id) + ".json";
     }
 
     void loadIndex() {
-        std::string indexPath = dataDir + "/problems.json";
+        std::string indexPath = dataDir + "/problems/problems.json";
         if (fs::exists(indexPath)) {
             std::ifstream f(indexPath);
             if (f.is_open()) {
@@ -140,7 +138,7 @@ private:
 
     void saveIndex() {
         ensureDataDir();
-        std::string indexPath = dataDir + "/problems.json";
+        std::string indexPath = dataDir + "/problems/problems.json";
         std::ofstream f(indexPath);
         if (f.is_open()) {
             f << data.dump(2);
@@ -446,7 +444,7 @@ public:
         return view(problemId);
     }
 
-    // 从JSON导入题目（支持 NoldOJ 和 JudgeLite 格式）
+    // 从JSON导入题目（支持 NoldOJ 和 CliJudge 格式）
     int importProblem(const json& problemData) {
         if (!problemData.contains("problem") || !problemData.contains("test_cases")) {
             return -1;
@@ -460,7 +458,7 @@ public:
             imported["problem"] = problemData["problem"];
             imported["test_cases"] = problemData["test_cases"];
         } else {
-            // JudgeLite 旧格式
+            // CliJudge 旧格式
             imported = problemData;
         }
         
@@ -1355,12 +1353,12 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         }
     }
     else {
-        std::cerr << "Invalid import format. Expected NoldOJ or JudgeLite format." << std::endl;
+        std::cerr << "Invalid import format. Expected NoldOJ or CliJudge format." << std::endl;
         return 1;
     }
 }
 
 } // namespace problem
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_PROBLEM_H
+#endif // CLIJUDGE_PROBLEM_H

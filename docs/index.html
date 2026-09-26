@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JudgeLite - 轻量级命令行在线评测系统</title>
-<meta name="description" content="JudgeLite 是一套专为 Windows 平台设计的轻量级命令行在线评测系统（OJ）。支持多语言判题、安全沙箱、比赛管理、JSON存储，纯命令行界面，开箱即用。">
+<title>CliJudge - 轻量级命令行在线评测系统</title>
+<meta name="description" content="CliJudge 是一套专为 Windows 平台设计的轻量级命令行在线评测系统（OJ）。支持多语言判题、安全沙箱、比赛管理、JSON存储，纯命令行界面，开箱即用。">
 <style>
   :root {
     --bg: #0b1020;
@@ -240,7 +240,7 @@
 
 <nav>
   <div class="wrap">
-    <a class="brand" href="#top"><span class="logo">JL</span> JudgeLite</a>
+    <a class="brand" href="#top"><span class="logo">CJ</span> CliJudge</a>
     <button class="nav-toggle" aria-label="菜单">☰</button>
     <div class="nav-links">
       <a href="#features">功能特性</a>
@@ -257,14 +257,14 @@
   <div class="wrap">
     <div class="hero-badge"><span class="dot"></span>专为 Windows 平台设计的命令行评测系统</div>
     <h1>让代码评测<span class="grad">更快 · 更轻 · 更简单</span></h1>
-    <p class="hero-sub">JudgeLite 是一套轻量级的 Windows 命令行在线评测系统：多语言判题、安全沙箱、比赛管理、JSON 存储……纯命令行界面，开箱即用。</p>
+    <p class="hero-sub">CliJudge 是一套轻量级的 Windows 命令行在线评测系统：多语言判题、安全沙箱、比赛管理、JSON 存储……纯命令行界面，开箱即用。</p>
     <div class="hero-cta">
-      <a class="btn btn-primary" href="https://github.com/dxx114514-stack/judgelite/releases" target="_blank" rel="noopener">
+      <a class="btn btn-primary" href="https://github.com/dxx114514-stack/clijudge/releases" target="_blank" rel="noopener">
         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
         下载最新版本
       </a>
       <a class="btn btn-ghost" href="#features">查看功能</a>
-      <a class="btn btn-ghost" href="https://github.com/dxx114514-stack/judgelite" target="_blank" rel="noopener">GitHub 仓库
+      <a class="btn btn-ghost" href="https://github.com/dxx114514-stack/clijudge" target="_blank" rel="noopener">GitHub 仓库
         <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
       </a>
       <a class="btn btn-ghost" href="support.html">支持中心</a>
@@ -283,7 +283,7 @@
     <div class="sec-head reveal">
       <span class="tag">Features</span>
       <h2>功能特性</h2>
-      <p>从题目管理到安全沙箱，JudgeLite 覆盖了轻量级 OJ 所需的全部能力。</p>
+      <p>从题目管理到安全沙箱，CliJudge 覆盖了轻量级 OJ 所需的全部能力。</p>
     </div>
     <div class="grid g3">
       <div class="card reveal">
@@ -423,15 +423,15 @@
     <div class="sec-head reveal">
       <span class="tag">Quick Start</span>
       <h2>快速开始</h2>
-      <p>编译项目并开始使用 JudgeLite。</p>
+      <p>编译项目并开始使用 CliJudge。</p>
     </div>
 
     <div class="setup reveal">
       <div class="code-block">
         <div class="bar"><i></i><i></i><i></i></div>
         <pre><code># 1. 克隆仓库
-git clone https://github.com/dxx114514-stack/judgelite.git
-cd judgelite
+git clone https://github.com/dxx114514-stack/clijudge.git
+cd clijudge
 
 # 2. 编译项目
 mkdir build && cd build
@@ -439,23 +439,23 @@ cmake ..
 cmake --build .
 
 # 3. 查看帮助
-./judgelite.exe help
+./clijudge.exe help
 
 # 4. 创建题目
-./judgelite.exe problem create "A + B Problem"
+./clijudge.exe problem create "A + B Problem"
 
 # 5. 添加测试数据
-./judgelite.exe problem testdata 1 create input.in output.out 1000 256 100
+./clijudge.exe problem testdata 1 create input.in output.out 1000 256 100
 
 # 6. 提交解答
-./judgelite.exe problem submit 1 solution.cpp</code></pre>
+./clijudge.exe problem submit 1 solution.cpp</code></pre>
       </div>
       <ol>
         <li>安装 <a href="https://www.mingw-w64.org/" target="_blank" rel="noopener" style="color: var(--accent-2);">MinGW-w64</a> 和 <a href="https://cmake.org/" target="_blank" rel="noopener" style="color: var(--accent-2);">CMake</a></li>
         <li>克隆仓库并进入项目目录</li>
         <li>使用 CMake 生成构建文件</li>
         <li>编译生成可执行文件</li>
-        <li>运行 <code>./judgelite.exe help</code> 查看帮助</li>
+        <li>运行 <code>./clijudge.exe help</code> 查看帮助</li>
         <li>开始创建题目和管理评测</li>
       </ol>
     </div>
@@ -467,7 +467,7 @@ cmake --build .
     <div class="sec-head reveal">
       <span class="tag">Commands</span>
       <h2>命令参考</h2>
-      <p>JudgeLite 提供丰富的子命令，覆盖题目、比赛、文章等全部管理功能。</p>
+      <p>CliJudge 提供丰富的子命令，覆盖题目、比赛、文章等全部管理功能。</p>
     </div>
 
     <div class="command-tree reveal">
@@ -529,7 +529,7 @@ cmake --build .
     </div>
     <div class="reveal">
       <details open>
-        <summary>如何安装 JudgeLite？</summary>
+        <summary>如何安装 CliJudge？</summary>
         <p>克隆仓库后使用 CMake 编译：<code>mkdir build && cd build && cmake .. && cmake --build .</code>。需要 MinGW-w64 和 CMake。</p>
       </details>
       <details>
@@ -542,7 +542,7 @@ cmake --build .
       </details>
       <details>
         <summary>数据存储在哪里？</summary>
-        <p>默认存储在可执行文件同级目录的 <code>data/</code> 文件夹，可通过环境变量 <code>JUDGELITE_DATA_DIR</code> 自定义。</p>
+        <p>默认存储在可执行文件同级目录的 <code>data/</code> 文件夹，可通过环境变量 <code>CLIJUDGE_DATA_DIR</code> 自定义。题目、文章、比赛、提交分别位于 <code>data/problems</code>、<code>data/articles</code>、<code>data/contests</code>、<code>data/submissions</code> 子目录，旧版平铺数据启动时自动迁移。</p>
       </details>
       <details>
         <summary>如何导入导出题目？</summary>
@@ -558,14 +558,14 @@ cmake --build .
 
 <footer>
   <div class="wrap">
-    <a class="brand" href="#top"><span class="logo">JL</span> JudgeLite</a>
+    <a class="brand" href="#top"><span class="logo">CJ</span> CliJudge</a>
     <p style="margin-top: 12px;">Windows 命令行评测系统 · 开源 · MIT License</p>
     <p style="margin-top: 8px; display: flex; gap: 24px; justify-content: center; flex-wrap: wrap;">
-      <a href="https://github.com/dxx114514-stack/judgelite" target="_blank" rel="noopener" style="color: var(--accent-2);">GitHub</a>
-      <a href="https://github.com/dxx114514-stack/judgelite/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">下载</a>
+      <a href="https://github.com/dxx114514-stack/clijudge" target="_blank" rel="noopener" style="color: var(--accent-2);">GitHub</a>
+      <a href="https://github.com/dxx114514-stack/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">下载</a>
       <a href="support.html" style="color: var(--accent-2);">支持中心</a>
     </p>
-    <p style="margin-top: 16px; font-size: 12px; color: var(--text-faint);">© 2026 JudgeLite. All rights reserved.</p>
+    <p style="margin-top: 16px; font-size: 12px; color: var(--text-faint);">© 2026 CliJudge. All rights reserved.</p>
   </div>
 </footer>
 

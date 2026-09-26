@@ -1,4 +1,4 @@
-# JudgeLite
+# CliJudge
 
 轻量级命令行在线评测系统
 
@@ -90,27 +90,27 @@ Linux 下语言包联网下载依赖 `curl`（`displaylang` 命令）。
 
 ```bash
 # 查看帮助
-judgelite.exe help
+clijudge.exe help
 
 # 创建题目
-judgelite.exe problem create "A + B Problem"
+clijudge.exe problem create "A + B Problem"
 
 # 查看题目
-judgelite.exe problem view 1
+clijudge.exe problem view 1
 
 # 列出所有题目
-judgelite.exe problem list
+clijudge.exe problem list
 
 # 创建文章
-judgelite.exe article create "题目说明"
+clijudge.exe article create "题目说明"
 
 # 创建比赛
-judgelite.exe contest create "比赛标题" "2026-01-01 10:00:00" "2026-01-01 12:00:00" 1 2
+clijudge.exe contest create "比赛标题" "2026-01-01 10:00:00" "2026-01-01 12:00:00" 1 2
 ```
 
 ## 数据存储
 
-数据默认存储在可执行文件同级目录的 `data/` 文件夹下，可通过环境变量 `CLIJUDGE_DATA_DIR`（兼容旧名 `JUDGELITE_DATA_DIR`）自定义。
+数据默认存储在可执行文件同级目录的 `data/` 文件夹下，可通过环境变量 `CLIJUDGE_DATA_DIR` 自定义。题目、文章、比赛、提交分别存放在 `data/problems`、`data/articles`、`data/contests`、`data/submissions` 子目录中；旧版平铺在 `data/` 根下的数据会在启动时自动迁移到对应子目录。
 
 ## 系统要求
 

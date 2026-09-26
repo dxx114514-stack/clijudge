@@ -1,8 +1,8 @@
-#ifndef JUDGELITE_CONTEST_H
-#define JUDGELITE_CONTEST_H
+#ifndef CLIJUDGE_CONTEST_H
+#define CLIJUDGE_CONTEST_H
 
 // contest.h
-// JudgeLite 比赛管理子命令
+// CliJudge 比赛管理子命令
 //
 // 子命令:
 //   create [标题] [开始时间] [结束时间] [题目1] [题目2] - 创建比赛
@@ -27,7 +27,7 @@
 #include "platform.h"
 #include "problem.h"
 
-namespace judgelite {
+namespace clijudge {
 namespace contest {
 
 using json = nlohmann::json;
@@ -60,17 +60,15 @@ private:
     json data;
 
     void ensureDataDir() {
-        if (!fs::exists(dataDir)) {
-            fs::create_directories(dataDir);
-        }
+        fs::create_directories(dataDir + "/contests");
     }
 
     std::string getContestPath(int id) {
-        return dataDir + "/contest_" + std::to_string(id) + ".json";
+        return dataDir + "/contests/contest_" + std::to_string(id) + ".json";
     }
 
     void loadIndex() {
-        std::string indexPath = dataDir + "/contests.json";
+        std::string indexPath = dataDir + "/contests/contests.json";
         if (fs::exists(indexPath)) {
             std::ifstream f(indexPath);
             if (f.is_open()) {
@@ -92,7 +90,7 @@ private:
 
     void saveIndex() {
         ensureDataDir();
-        std::string indexPath = dataDir + "/contests.json";
+        std::string indexPath = dataDir + "/contests/contests.json";
         std::ofstream f(indexPath);
         if (f.is_open()) {
             f << data.dump(2);
@@ -200,7 +198,7 @@ public:
         if (problemId < 0) return false;
 
         // 加载题目数据进行评判
-        std::string problemPath = dataDir + "/problem_" + std::to_string(problemId) + ".json";
+        std::string problemPath = dataDir + "/problems/problem_" + std::to_string(problemId) + ".json";
         json problemData;
         if (fs::exists(problemPath)) {
             std::ifstream pf(problemPath);
@@ -245,7 +243,7 @@ public:
         if (!judgeDetail.is_null()) submission["judge_detail"] = judgeDetail;
 
         ensureDataDir();
-        std::string submissionPath = dataDir + "/contest_" + std::to_string(contestId) +
+        std::string submissionPath = dataDir + "/contests/contest_" + std::to_string(contestId) +
                                      "_problem_" + std::to_string(problemIndex) + "_submissions.json";
 
         json submissions = json::array();
@@ -267,7 +265,7 @@ public:
 
     // 查看比赛题目提交记录
     json viewProblemSubmissions(int contestId, int problemIndex) {
-        std::string submissionPath = dataDir + "/contest_" + std::to_string(contestId) +
+        std::string submissionPath = dataDir + "/contests/contest_" + std::to_string(contestId) +
                                      "_problem_" + std::to_string(problemIndex) + "_submissions.json";
 
         if (fs::exists(submissionPath)) {
@@ -288,7 +286,7 @@ public:
 
     // 导入 CDF 格式比赛
     int importCdf(const std::string& cdfPath, const std::string& dataDir) {
-        auto cdf = judgelite::cdf::parseCdf(cdfPath);
+        auto cdf = clijudge::cdf::parseCdf(cdfPath);
         if (cdf.tasks.empty()) {
             std::cerr << "CDF 文件中没有题目。" << std::endl;
             return -1;
@@ -299,7 +297,7 @@ public:
         fs::path cdfDataDir = cdfDir / "data";
 
         // 创建 ProblemStore 来导入题目
-        judgelite::problem::ProblemStore problemStore(dataDir);
+        clijudge::problem::ProblemStore problemStore(dataDir);
         std::vector<int> problemIds;
 
         for (const auto& task : cdf.tasks) {
@@ -308,8 +306,8 @@ public:
             problemJson["problem"]["title"] = task.problemTitle;
             problemJson["problem"]["time_limit"] = task.testCases.empty() ? 1000 : task.testCases[0].timeLimit;
             problemJson["problem"]["memory_limit"] = task.testCases.empty() ? 256 : task.testCases[0].memoryLimit;
-            problemJson["problem"]["compare_mode"] = judgelite::cdf::comparisonModeToJudgeLite(task.comparisonMode);
-            problemJson["problem"]["problem_type"] = judgelite::cdf::taskTypeToJudgeLite(task.taskType);
+            problemJson["problem"]["compare_mode"] = clijudge::cdf::comparisonModeToCliJudge(task.comparisonMode);
+            problemJson["problem"]["problem_type"] = clijudge::cdf::taskTypeToCliJudge(task.taskType);
             problemJson["problem"]["is_public"] = true;
             problemJson["problem"]["is_hidden"] = false;
             problemJson["problem"]["spj_code"] = "";
@@ -334,7 +332,7 @@ public:
                 problemJson["problem"]["float_rel_tolerance"] = eps;
             }
 
-            std::string pType = judgelite::cdf::taskTypeToJudgeLite(task.taskType);
+            std::string pType = clijudge::cdf::taskTypeToCliJudge(task.taskType);
             json graderFiles = json::object();
 
             // 交互题: interactor 源码 → interactor_code, 可执行文件 → interactor_data;
@@ -354,7 +352,7 @@ public:
                                    [](unsigned char ch) { return (char)std::tolower(ch); });
                     if (ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".c") {
                         problemJson["problem"]["interactor_code"] =
-                            judgelite::cdf::readFileContent(interPath);
+                            clijudge::cdf::readFileContent(interPath);
                     } else {
                         problemJson["problem"]["interactor_data"] = interPath;
                     }
@@ -363,7 +361,7 @@ public:
                 std::string graderPath = resolve(task.grader);
                 if (!graderPath.empty()) {
                     graderFiles[fs::path(task.grader).filename().generic_string()] =
-                        judgelite::cdf::readFileContent(graderPath);
+                        clijudge::cdf::readFileContent(graderPath);
                 }
             }
 
@@ -380,7 +378,7 @@ public:
                     if (name.empty() || name[0] == '/' || name.find(':') != std::string::npos ||
                         name.find("..") != std::string::npos)
                         continue;
-                    graderFiles[name] = judgelite::cdf::readFileContent(gp.string());
+                    graderFiles[name] = clijudge::cdf::readFileContent(gp.string());
                 }
             }
             if (!graderFiles.empty()) problemJson["problem"]["grader_files"] = graderFiles;
@@ -416,9 +414,9 @@ public:
 
                     std::string inputData, outputData;
                     if (j < tc.inputFiles.size())
-                        inputData = judgelite::cdf::readFileContent((cdfDataDir / tc.inputFiles[j]).string());
+                        inputData = clijudge::cdf::readFileContent((cdfDataDir / tc.inputFiles[j]).string());
                     if (j < tc.outputFiles.size())
-                        outputData = judgelite::cdf::readFileContent((cdfDataDir / tc.outputFiles[j]).string());
+                        outputData = clijudge::cdf::readFileContent((cdfDataDir / tc.outputFiles[j]).string());
                     tcJson["input_data"] = inputData;
                     tcJson["output_data"] = outputData;
                     tcJson["subtask_id"] = subtaskId;
@@ -455,7 +453,7 @@ public:
         json contest = view(contestId);
         if (contest.is_null()) return nullptr;
 
-        judgelite::problem::ProblemStore problemStore(dataDir);
+        clijudge::problem::ProblemStore problemStore(dataDir);
 
         fs::path outDir = fs::path(cdfPath).parent_path();
         if (outDir.empty()) outDir = ".";
@@ -510,10 +508,10 @@ public:
                 task["outputFileName"] = srcName + ".out";
                 task["standardInputCheck"] = true;
                 task["standardOutputCheck"] = true;
-                task["taskType"] = judgelite::cdf::judgeLiteToTaskType(pType);
+                task["taskType"] = clijudge::cdf::cliJudgeToTaskType(pType);
                 task["subFolderCheck"] = false;
                 task["comparisonMode"] =
-                    judgelite::cdf::judgeLiteToComparisonMode(p.value("compare_mode", "text_strict"));
+                    clijudge::cdf::cliJudgeToComparisonMode(p.value("compare_mode", "text_strict"));
                 task["diffArguments"] = "--ignore-space-change --text --brief";
                 double ftol = p.value("float_abs_tolerance", 0.0);
                 int realPrecision = 3;
@@ -710,7 +708,7 @@ public:
     std::string reportHtml(int contestId) {
         json contest = view(contestId);
         if (contest.is_null()) return "";
-        judgelite::problem::ProblemStore problemStore(dataDir);
+        clijudge::problem::ProblemStore problemStore(dataDir);
         int nP = contest.contains("problem_ids") ? (int)contest["problem_ids"].size() : 0;
 
         std::vector<std::string> titles((size_t)std::max(nP, 0), "");
@@ -1023,6 +1021,6 @@ inline int cmdExportCdf(const std::string& dataDir, int contestId, const std::st
 }
 
 } // namespace contest
-} // namespace judgelite
+} // namespace clijudge
 
-#endif // JUDGELITE_CONTEST_H
+#endif // CLIJUDGE_CONTEST_H

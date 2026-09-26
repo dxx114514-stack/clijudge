@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>技术支持 - JudgeLite</title>
+<title>技术支持 - CliJudge</title>
 <style>
   :root {
     --bg: #0b1020;
@@ -182,12 +182,12 @@
 
 <nav>
   <div class="wrap">
-    <a class="brand" href="index.html"><span class="logo">JL</span> JudgeLite</a>
+    <a class="brand" href="index.html"><span class="logo">CJ</span> CliJudge</a>
     <button class="nav-toggle" aria-label="菜单">☰</button>
     <div class="nav-links">
       <a href="index.html">首页</a>
       <a href="support.html">支持中心</a>
-      <a href="https://github.com/dxx114514-stack/judgelite" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/dxx114514-stack/clijudge" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
 </nav>
@@ -195,7 +195,7 @@
 <header>
   <div class="wrap">
     <h1><span class="grad">技术支持</span></h1>
-    <p class="hero-sub">获取帮助，解决问题，快速上手 JudgeLite。</p>
+    <p class="hero-sub">获取帮助，解决问题，快速上手 CliJudge。</p>
   </div>
 </header>
 
@@ -207,7 +207,7 @@
     </div>
     <div class="grid g2 reveal">
       <div class="card">
-        <h3>如何编译 JudgeLite？</h3>
+        <h3>如何编译 CliJudge？</h3>
         <p>使用 CMake 编译：</p>
         <div class="code-block" style="margin-top: 12px;">
           <div class="bar"><i></i><i></i><i></i></div>
@@ -220,13 +220,13 @@ cmake --build .</code></pre>
         <div class="code-block" style="margin-top: 12px;">
           <div class="bar"><i></i><i></i><i></i></div>
           <pre><code>g++ -std=c++17 -O2 -static -I include \
-  -o judgelite.exe src/main.cpp \
-  -lpsapi -luserenv -lole32</code></pre>
+  -o clijudge.exe src/main.cpp \
+  -lpsapi -luserenv -lole32 -lwinhttp</code></pre>
         </div>
       </div>
       <div class="card">
         <h3>数据存储在哪里？</h3>
-        <p>默认存储在可执行文件同级目录的 <code>data/</code> 文件夹下。可通过环境变量 <code>JUDGELITE_DATA_DIR</code> 自定义存储位置。</p>
+        <p>默认存储在可执行文件同级目录的 <code>data/</code> 文件夹下。可通过环境变量 <code>CLIJUDGE_DATA_DIR</code> 自定义存储位置。题目、文章、比赛、提交分别位于 <code>data/problems</code>、<code>data/articles</code>、<code>data/contests</code>、<code>data/submissions</code> 子目录，旧版平铺数据会在启动时自动迁移。</p>
         <p style="margin-top: 12px;">数据以 JSON 格式存储，方便备份和迁移。</p>
       </div>
       <div class="card">
@@ -242,10 +242,10 @@ cmake --build .</code></pre>
         <div class="code-block" style="margin-top: 12px;">
           <div class="bar"><i></i><i></i><i></i></div>
           <pre><code># 导出题目
-judgelite.exe problem export 1 problem_1.json
+clijudge.exe problem export 1 problem_1.json
 
 # 导入题目
-judgelite.exe problem import problem_1.json</code></pre>
+clijudge.exe problem import problem_1.json</code></pre>
         </div>
       </div>
     </div>
@@ -268,7 +268,7 @@ judgelite.exe problem import problem_1.json</code></pre>
           </li>
           <li>
             <strong>找不到 Windows API 函数</strong>
-            确保链接了正确的库：<code>-lpsapi -luserenv -lole32</code>
+            确保链接了正确的库：<code>-lpsapi -luserenv -lole32 -lwinhttp</code>
           </li>
           <li>
             <strong>C++17 支持错误</strong>
@@ -281,7 +281,7 @@ judgelite.exe problem import problem_1.json</code></pre>
         <ol class="steps">
           <li>
             <strong>无法创建数据目录</strong>
-            检查写入权限，或设置 <code>JUDGELITE_DATA_DIR</code> 到有权限的目录。
+            检查写入权限，或设置 <code>CLIJUDGE_DATA_DIR</code> 到有权限的目录。
           </li>
           <li>
             <strong>沙箱执行失败</strong>
@@ -308,7 +308,7 @@ judgelite.exe problem import problem_1.json</code></pre>
       <div class="contact-card">
         <h4>GitHub Issues</h4>
         <p>提交问题和建议，查看最新动态</p>
-        <a href="https://github.com/dxx114514-stack/judgelite/issues" class="btn btn-primary" target="_blank" rel="noopener">提交 Issue</a>
+        <a href="https://github.com/dxx114514-stack/clijudge/issues" class="btn btn-primary" target="_blank" rel="noopener">提交 Issue</a>
       </div>
       <div class="contact-card">
         <h4>查看文档</h4>
@@ -317,7 +317,7 @@ judgelite.exe problem import problem_1.json</code></pre>
       </div>
       <div class="contact-card">
         <h4>返回首页</h4>
-        <p>了解 JudgeLite 的全部功能</p>
+        <p>了解 CliJudge 的全部功能</p>
         <a href="index.html" class="btn btn-ghost">返回首页</a>
       </div>
     </div>
@@ -326,14 +326,14 @@ judgelite.exe problem import problem_1.json</code></pre>
 
 <footer>
   <div class="wrap">
-    <a class="brand" href="index.html"><span class="logo">JL</span> JudgeLite</a>
+    <a class="brand" href="index.html"><span class="logo">CJ</span> CliJudge</a>
     <p style="margin-top: 12px;">Windows 命令行评测系统 · 开源 · MIT License</p>
     <p style="margin-top: 8px; display: flex; gap: 24px; justify-content: center; flex-wrap: wrap;">
-      <a href="https://github.com/dxx114514-stack/judgelite" target="_blank" rel="noopener" style="color: var(--accent-2);">GitHub</a>
-      <a href="https://github.com/dxx114514-stack/judgelite/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">下载</a>
+      <a href="https://github.com/dxx114514-stack/clijudge" target="_blank" rel="noopener" style="color: var(--accent-2);">GitHub</a>
+      <a href="https://github.com/dxx114514-stack/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">下载</a>
       <a href="support.html" style="color: var(--accent-2);">支持中心</a>
     </p>
-    <p style="margin-top: 16px; font-size: 12px; color: var(--text-faint);">© 2026 JudgeLite. All rights reserved.</p>
+    <p style="margin-top: 16px; font-size: 12px; color: var(--text-faint);">© 2026 CliJudge. All rights reserved.</p>
   </div>
 </footer>
 
