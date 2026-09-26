@@ -5,6 +5,7 @@
 ## 功能特性
 
 - **题目管理**: 创建、编辑、删除、导入导出题目
+- **测试点生成器**: 题目可附带生成器（源码内嵌或外部可执行文件），每次评测前按测试点编号运行，写入 `data.in`/`data.out` 作为该测试点的评测数据
 - **比赛管理**: 创建比赛、管理比赛题目
 - **提交评测**: 使用沙箱安全执行代码
 - **数据存储**: JSON格式存储，方便导入导出
@@ -34,6 +35,8 @@
 │  │  ├─-describe [md路径]
 │  │  ├─-exampleio [in路径] [out路径]
 │  │  ├─-instyle [md路径]
+│  │  ├─-generator [生成器源码/程序路径]
+│  │  ├─-generator-exe [生成器程序路径]
 │  │  └─-outstyle [md路径]
 │  ├─delete [编号]
 │  ├─edit [编号]
@@ -41,6 +44,8 @@
 │  │  ├─-describe [md路径]
 │  │  ├─-exampleio [in路径] [out路径]
 │  │  ├─-instyle [md路径]
+│  │  ├─-generator [生成器源码/程序路径]
+│  │  ├─-generator-exe [生成器程序路径]
 │  │  ├─-outstyle [md路径]
 │  │  └─-title [标题]
 │  ├─export [zip路径]
@@ -50,7 +55,7 @@
 │  ├─testdata [题目编号]
 │  │  ├─-set-all
 │  │  ├─-zip [zip路径]
-│  │  ├─create [in] [out] [time] [mem] [pts]
+│  │  ├─create [in] [out] [time] [mem] [pts] (in/out 可为 - 占位, 由生成器生成)
 │  │  ├─delete [编号]
 │  │  └─list
 │  └─view [编号]

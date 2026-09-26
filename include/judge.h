@@ -728,6 +728,10 @@ inline int computeKillLimitMs(int timeLimitMs, double ratio) {
     return base + (int)std::ceil(grace);
 }
 
+// 测试点生成器: 评测前运行 generator <测试点编号>, 生成 data.in/data.out 作为该测试点数据
+constexpr int GENERATOR_TIME_LIMIT_MS = 10000;   // 生成器墙钟时限 (超时该点判 SYSTEM_ERROR)
+constexpr int GENERATOR_MEMORY_LIMIT_MB = 1024;  // 生成器内存上限 (出题人代码, 给足余量)
+
 inline std::string trimTail(const std::string& s, size_t limit) {
     if (s.size() <= limit) return s;
     return "... (truncated)\n" + s.substr(s.size() - limit);
@@ -1728,6 +1732,52 @@ inline JudgeResult judgeSubmission(
         }
     }
 
+    // 测试点生成器: generator_code (内嵌源码, 评测前编译) 或 generator_exe (外部可执行文件)
+    std::string genExe;
+    bool generatorReady = false;
+    if (pType != "answers_only") {
+        std::string gCode = p.value("generator_code", "");
+        std::string gExeFile = p.value("generator_exe", "");
+        if (!gCode.empty()) {
+            std::string genSrc = platform::pathJoin(baseDir, "generator.cpp");
+            writeFileContent(genSrc, gCode);
+            CompileResult gCr = compileSources({genSrc}, baseDir, "generator");
+            if (!gCr.success) {
+                result.status = JudgeStatus::SYSTEM_ERROR;
+                result.compileError = "Generator compile failed:\n" + gCr.error;
+                try { fs::remove_all(baseDir); } catch (...) {}
+                return result;
+            }
+            genExe = gCr.exePath;
+            generatorReady = true;
+        } else if (!gExeFile.empty()) {
+            std::error_code ec;
+            if (!fs::exists(gExeFile, ec)) {
+                result.status = JudgeStatus::SYSTEM_ERROR;
+                result.compileError = "generator_exe not found: " + gExeFile;
+                try { fs::remove_all(baseDir); } catch (...) {}
+                return result;
+            }
+            std::string gExt = fs::path(gExeFile).extension().string();
+            fs::path gDst = fs::path(baseDir) /
+                            ("generator" + (gExt.empty() ? platform::exeSuffix() : gExt));
+            fs::copy_file(gExeFile, gDst, fs::copy_options::overwrite_existing, ec);
+            if (ec) {
+                result.status = JudgeStatus::SYSTEM_ERROR;
+                result.compileError = "Failed to copy generator_exe: " + ec.message();
+                try { fs::remove_all(baseDir); } catch (...) {}
+                return result;
+            }
+#ifndef _WIN32
+            fs::permissions(gDst, fs::perms::owner_all | fs::perms::group_read |
+                                 fs::perms::others_read,
+                            fs::perm_options::add, ec);
+#endif
+            genExe = fs::absolute(gDst).string();
+            generatorReady = true;
+        }
+    }
+
     // 构建测试任务表
     struct FlatTest {
         int subtaskId;
@@ -1780,6 +1830,49 @@ inline JudgeResult judgeSubmission(
             local.timeLimitMs = (tcTimeLimit > 0) ? tcTimeLimit : defaultTimeLimit;
             local.memoryLimitMB = (tcMemoryLimit > 0) ? tcMemoryLimit : defaultMemoryLimit;
             std::string ioDir = platform::pathJoin(baseDir, "t_" + std::to_string(i));
+
+            // 测试点生成器: 评测前运行 generator <测试点编号>, 读取其工作目录 data.in/data.out
+            // 作为本测试点的输入与标准答案 (interaction 由交互器供输入, answers_only 不使用)
+            std::string inData = tc.value("input_data", "");
+            std::string outData = tc.value("output_data", "");
+            if (generatorReady && !isAnswers && !isDual) {
+                fs::create_directories(ioDir);
+                RunOutcome g = runProgram(genExe, {std::to_string(tcId)}, "",
+                                          GENERATOR_TIME_LIMIT_MS, GENERATOR_MEMORY_LIMIT_MB,
+                                          ioDir, "", settings::getFileWriteLimitBytes(),
+                                          /*trusted=*/true);  // 生成器需在工作目录写 data.in/data.out
+                std::string genErr;
+                if (g.status != JudgeStatus::ACCEPTED) {
+                    genErr = "generator failed on test point " + std::to_string(tcId) +
+                             ": " + g.message;
+                } else {
+                    std::string dataIn = platform::pathJoin(ioDir, "data.in");
+                    std::string dataOut = platform::pathJoin(ioDir, "data.out");
+                    if (!fs::exists(dataIn)) {
+                        genErr = "generator did not create data.in (test point " +
+                                 std::to_string(tcId) + ")";
+                    } else if (!fs::exists(dataOut)) {
+                        genErr = "generator did not create data.out (test point " +
+                                 std::to_string(tcId) + ")";
+                    } else {
+                        inData = readFileContent(dataIn);
+                        outData = readFileContent(dataOut);
+                    }
+                }
+                if (!genErr.empty()) {
+                    TestCaseResult& r = testResults[i];
+                    r.id = tcId;
+                    r.score = 0;
+                    r.maxScore = tcScore;
+                    r.status = JudgeStatus::SYSTEM_ERROR;
+                    r.timeUsedMs = 0;
+                    r.memoryUsedKB = 0;
+                    r.message = "System Error: " + genErr;
+                    if (!g.error.empty()) r.message += "\n" + trimTail(g.error, 500);
+                    continue;
+                }
+            }
+
             if (isAnswers) {
                 testResults[i] = judgeAnswersOnly(
                     tcId, tcScore, tc, answersDir, answerExt,
@@ -1821,14 +1914,14 @@ inline JudgeResult judgeSubmission(
                 local2.trustedRun = true;  // grader 需在工作目录创建文件并启动选手进程
                 testResults[i] = judgeTestCase(
                     tcId, tcScore,
-                    tc.value("input_data", ""),
-                    tc.value("output_data", ""),
+                    inData,
+                    outData,
                     ioDir, local2);
             } else {
                 testResults[i] = judgeTestCase(
                     tcId, tcScore,
-                    tc.value("input_data", ""),
-                    tc.value("output_data", ""),
+                    inData,
+                    outData,
                     ioDir, local);
             }
         }

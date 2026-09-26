@@ -541,6 +541,10 @@ cmake --build .
         <p>使用 <code>problem testdata [题目编号] create [in路径] [out路径] [时间限制] [内存限制] [分值]</code> 命令添加测试点。</p>
       </details>
       <details>
+        <summary>什么是测试点生成器？</summary>
+        <p>创建/编辑题目时用 <code>-generator [源码或程序路径]</code>（或 <code>-generator-exe [路径]</code>）附带生成器。每次评测前按测试点编号运行（如 <code>gener.exe 1</code>），生成器在工作目录写入 <code>data.in</code> 与 <code>data.out</code>，作为该测试点的输入与标准答案；<code>testdata create - - ...</code> 可创建占位测试点。</p>
+      </details>
+      <details>
         <summary>数据存储在哪里？</summary>
         <p>默认存储在可执行文件同级目录的 <code>data/</code> 文件夹，可通过环境变量 <code>CLIJUDGE_DATA_DIR</code> 自定义。题目、文章、比赛、提交分别位于 <code>data/problems</code>、<code>data/articles</code>、<code>data/contests</code>、<code>data/submissions</code> 子目录，旧版平铺数据启动时自动迁移。</p>
       </details>

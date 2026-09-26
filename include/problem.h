@@ -213,6 +213,8 @@ public:
                 {"interactor_data", ""},
                 {"interactor_name", ""},
                 {"grader_files", json::object()},
+                {"generator_code", ""},
+                {"generator_exe", ""},
                 {"allowed_languages", json::array()}
             }},
             {"test_cases", json::array()}
@@ -587,7 +589,7 @@ inline int cmdCount(const std::string& dataDir) {
 }
 
 // 应用题型相关可选参数 (-type/-subtask-mode/-answer-ext/-source-name/
-// -dependence/-interactor/-grader); 出错时打印并返回 false
+// -dependence/-interactor/-grader/-generator/-generator-exe); 出错时打印并返回 false
 inline bool applyTypeOptions(json& updates,
                              const std::string& problemType,
                              const std::string& answerExt,
@@ -595,7 +597,9 @@ inline bool applyTypeOptions(json& updates,
                              const std::string& subtaskMode,
                              const std::string& dependenceJson,
                              const std::string& interactorFile,
-                             const std::string& graderDir) {
+                             const std::string& graderDir,
+                             const std::string& generatorFile = "",
+                             const std::string& generatorExe = "") {
     if (!problemType.empty()) updates["problem_type"] = problemType;
     if (!answerExt.empty()) updates["answer_file_extension"] = answerExt;
     if (!sourceName.empty()) updates["source_file_name"] = sourceName;
@@ -644,6 +648,32 @@ inline bool applyTypeOptions(json& updates,
         }
         updates["grader_files"] = gf;
     }
+    // 测试点生成器: 源码内嵌 (generator_code), 其余按外部可执行文件 (generator_exe)
+    if (!generatorFile.empty()) {
+        if (!fs::exists(generatorFile)) {
+            std::cerr << "Generator file not found: " << generatorFile << std::endl;
+            return false;
+        }
+        std::string ext = fs::path(generatorFile).extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char ch) { return (char)std::tolower(ch); });
+        if (ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".c") {
+            updates["generator_code"] = readFileContent(generatorFile);
+            if (updates["generator_code"].get<std::string>().empty()) {
+                std::cerr << "Failed to read generator file: " << generatorFile << std::endl;
+                return false;
+            }
+        } else {
+            updates["generator_exe"] = fs::absolute(generatorFile).string();
+        }
+    }
+    if (!generatorExe.empty()) {
+        if (!fs::exists(generatorExe)) {
+            std::cerr << "Generator exe not found: " << generatorExe << std::endl;
+            return false;
+        }
+        updates["generator_exe"] = fs::absolute(generatorExe).string();
+    }
     return true;
 }
 
@@ -665,7 +695,9 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
                      const std::string& subtaskMode = "",
                      const std::string& dependenceJson = "",
                      const std::string& interactorFile = "",
-                     const std::string& graderDir = "") {
+                     const std::string& graderDir = "",
+                     const std::string& generatorFile = "",
+                     const std::string& generatorExe = "") {
     ProblemStore store(dataDir);
     int id = store.create(title);
 
@@ -709,7 +741,8 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
     }
     // 题型相关选项 (在 compare 之后应用, -type 优先于 -compare 的强制回退)
     if (!applyTypeOptions(updates, problemType, answerExt, sourceName, subtaskMode,
-                          dependenceJson, interactorFile, graderDir)) {
+                          dependenceJson, interactorFile, graderDir,
+                          generatorFile, generatorExe)) {
         store.deleteProblem(id);
         return 1;
     }
@@ -832,6 +865,20 @@ inline int cmdView(const std::string& dataDir, int id) {
         }
     }
 
+    // 测试点生成器
+    std::string genCode = p.value("generator_code", "");
+    std::string genExe = p.value("generator_exe", "");
+    if (!genCode.empty() || !genExe.empty()) {
+        std::cout << std::endl;
+        std::cout << "## Generator" << std::endl;
+        if (!genCode.empty()) {
+            std::cout << "Source: embedded (" << genCode.size() << " bytes)" << std::endl;
+        } else {
+            std::cout << "Exe: " << genExe << std::endl;
+        }
+        std::cout << "Usage: generator <test point id>, writes data.in / data.out before each judge" << std::endl;
+    }
+
     return 0;
 }
 
@@ -854,7 +901,9 @@ inline int cmdEdit(const std::string& dataDir, int id,
                     const std::string& subtaskMode = "",
                     const std::string& dependenceJson = "",
                     const std::string& interactorFile = "",
-                    const std::string& graderDir = "") {
+                    const std::string& graderDir = "",
+                    const std::string& generatorFile = "",
+                    const std::string& generatorExe = "") {
     ProblemStore store(dataDir);
 
     json updates;
@@ -899,7 +948,8 @@ inline int cmdEdit(const std::string& dataDir, int id,
     }
     // 题型相关选项 (在 compare 之后应用, -type 优先于 -compare 的强制回退)
     if (!applyTypeOptions(updates, problemType, answerExt, sourceName, subtaskMode,
-                          dependenceJson, interactorFile, graderDir)) {
+                          dependenceJson, interactorFile, graderDir,
+                          generatorFile, generatorExe)) {
         return 1;
     }
 
@@ -1017,16 +1067,26 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     json testCases = store.getTestCases(problemId);
     int nextId = testCases.empty() ? 1 : testCases.back().value("id", 0) + 1;
 
-    // 读取文件内容
-    std::string inContent = readFileContent(inputData);
-    if (inContent.empty()) {
-        std::cerr << "Failed to read input file: " << inputData << std::endl;
-        return 1;
+    // 读取文件内容 ("-": 占位测试点, 内容由测试点生成器评测前生成)
+    std::string inContent;
+    if (inputData == "-") {
+        inContent = "";
+    } else {
+        inContent = readFileContent(inputData);
+        if (inContent.empty()) {
+            std::cerr << "Failed to read input file: " << inputData << std::endl;
+            return 1;
+        }
     }
-    std::string outContent = readFileContent(outputData);
-    if (outContent.empty()) {
-        std::cerr << "Failed to read output file: " << outputData << std::endl;
-        return 1;
+    std::string outContent;
+    if (outputData == "-") {
+        outContent = "";
+    } else {
+        outContent = readFileContent(outputData);
+        if (outContent.empty()) {
+            std::cerr << "Failed to read output file: " << outputData << std::endl;
+            return 1;
+        }
     }
     TestCase tc;
     tc.id = nextId;

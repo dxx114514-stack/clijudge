@@ -119,6 +119,7 @@ void showCommandHelp(const std::string& command) {
         std::cout << "    options: -type -compare -spj-code -spj-exe -float-abs -float-rel" << std::endl;
         std::cout << "             -subtask-mode -answer-ext -source-name -dependence" << std::endl;
         std::cout << "             -interactor -grader -background -describe -exampleio" << std::endl;
+        std::cout << "             -generator -generator-exe" << std::endl;
         std::cout << "  delete [id]                    " << clijudge::lang::tr("problem.delete", "Delete problem") << std::endl;
         std::cout << "  edit [id]                      " << clijudge::lang::tr("problem.edit", "Edit problem (same options as create)") << std::endl;
         std::cout << "  export [zip_path]              " << clijudge::lang::tr("problem.export", "Export problem") << std::endl;
@@ -387,7 +388,7 @@ int main(int argc, char* argv[]) {
             return clijudge::problem::cmdCount(dataDir);
         } else if (subCmd == "create") {
             if (argc < 4) {
-                std::cerr << "Usage: clijudge.exe problem create [title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem create [title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir] [-generator file] [-generator-exe path]" << std::endl;
                 return 1;
             }
             std::string title = argv[3];
@@ -395,6 +396,7 @@ int main(int argc, char* argv[]) {
             std::string compareMode, spjCode, spjExe;
             std::string problemType, answerExt, sourceName, subtaskMode;
             std::string dependenceJson, interactorFile, graderDir;
+            std::string generatorFile, generatorExe;
             double floatAbsTol = 0.0, floatRelTol = 0.0;
 
             // 解析可选参数
@@ -434,6 +436,10 @@ int main(int argc, char* argv[]) {
                     interactorFile = argv[++i];
                 } else if (strcmp(argv[i], "-grader") == 0 && i + 1 < argc) {
                     graderDir = argv[++i];
+                } else if (strcmp(argv[i], "-generator") == 0 && i + 1 < argc) {
+                    generatorFile = argv[++i];
+                } else if (strcmp(argv[i], "-generator-exe") == 0 && i + 1 < argc) {
+                    generatorExe = argv[++i];
                 }
             }
 
@@ -443,7 +449,8 @@ int main(int argc, char* argv[]) {
                                                   floatAbsTol, floatRelTol,
                                                   problemType, answerExt, sourceName,
                                                   subtaskMode, dependenceJson,
-                                                  interactorFile, graderDir);
+                                                  interactorFile, graderDir,
+                                                  generatorFile, generatorExe);
         } else if (subCmd == "delete") {
             if (argc < 4) {
                 std::cerr << "Usage: clijudge.exe problem delete [id]" << std::endl;
@@ -453,7 +460,7 @@ int main(int argc, char* argv[]) {
             return clijudge::problem::cmdDelete(dataDir, id);
         } else if (subCmd == "edit") {
             if (argc < 4) {
-                std::cerr << "Usage: clijudge.exe problem edit [id] [-title title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir]" << std::endl;
+                std::cerr << "Usage: clijudge.exe problem edit [id] [-title title] [-background md] [-describe md] [-exampleio in out] [-instyle md] [-outstyle md] [-compare mode] [-spj-code md] [-spj-exe path] [-float-abs tol] [-float-rel tol] [-type type] [-subtask-mode mode] [-answer-ext ext] [-source-name name] [-dependence json] [-interactor file] [-grader dir] [-generator file] [-generator-exe path]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);
@@ -461,6 +468,7 @@ int main(int argc, char* argv[]) {
             std::string compareMode, spjCode, spjExe;
             std::string problemType, answerExt, sourceName, subtaskMode;
             std::string dependenceJson, interactorFile, graderDir;
+            std::string generatorFile, generatorExe;
             double floatAbsTol = 0.0, floatRelTol = 0.0;
 
             // 解析可选参数
@@ -502,6 +510,10 @@ int main(int argc, char* argv[]) {
                     interactorFile = argv[++i];
                 } else if (strcmp(argv[i], "-grader") == 0 && i + 1 < argc) {
                     graderDir = argv[++i];
+                } else if (strcmp(argv[i], "-generator") == 0 && i + 1 < argc) {
+                    generatorFile = argv[++i];
+                } else if (strcmp(argv[i], "-generator-exe") == 0 && i + 1 < argc) {
+                    generatorExe = argv[++i];
                 }
             }
 
@@ -511,7 +523,8 @@ int main(int argc, char* argv[]) {
                                                floatAbsTol, floatRelTol,
                                                problemType, answerExt, sourceName,
                                                subtaskMode, dependenceJson,
-                                               interactorFile, graderDir);
+                                               interactorFile, graderDir,
+                                               generatorFile, generatorExe);
         } else if (subCmd == "view") {
             if (argc < 4) {
                 std::cerr << "Usage: clijudge.exe problem view [id]" << std::endl;
@@ -566,7 +579,7 @@ int main(int argc, char* argv[]) {
                 return clijudge::problem::cmdTestDataList(dataDir, problemId);
             } else if (tcCmd == "create") {
                 if (argc < 7) {
-                    std::cerr << "Usage: clijudge.exe problem testdata [id] create [in] [out] [time] [mem] [pts]" << std::endl;
+                    std::cerr << "Usage: clijudge.exe problem testdata [id] create [in] [out] [time] [mem] [pts] (in/out can be - placeholder for generator)" << std::endl;
                     return 1;
                 }
                 std::string inputData = argv[5];
