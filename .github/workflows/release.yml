@@ -46,11 +46,14 @@ jobs:
           ./clijudge help
           ./clijudge displaylang list
       
+      - name: Rename for release
+        run: mv clijudge clijudge-linux
+      
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: clijudge-linux-${{ github.ref_name }}
-          path: clijudge
+          path: clijudge-linux
 
   release:
     needs: [build-windows, build-linux]
@@ -117,6 +120,6 @@ jobs:
           body: ${{ steps.changelog.outputs.changelog }}
           files: |
             dist/clijudge.exe
-            dist/clijudge
+            dist/clijudge-linux
           draft: false
           prerelease: false
