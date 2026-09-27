@@ -116,7 +116,7 @@ int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
     auto result = clijudge::sandbox_run(
         10000,  // 10秒超时
         256,    // 256MB内存限制
-        1,      // 单进程
+        32,     // sh 复合命令 (编译 && 运行) 需要多个进程, 超限由轮询击杀
         metaFile.c_str(),
         shellExe,
         shellArgs,

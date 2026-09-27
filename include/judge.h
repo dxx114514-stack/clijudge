@@ -1081,7 +1081,9 @@ inline TestCaseResult judgeTestCase(int tcId, int maxScore,
     writeFileContent(inputPath, inputData);
     writeFileContent(expectedPath, expectedOutput);
 
-    if (ctx.exePath.empty() || !fs::exists(ctx.exePath)) {
+    // 裸命令名 (python3/java/node) 无路径分隔符, 由执行层 PATH 解析, 此处无法 exists
+    bool hasPathSep = ctx.exePath.find_first_of("/\\") != std::string::npos;
+    if (ctx.exePath.empty() || (hasPathSep && !fs::exists(ctx.exePath))) {
         result.status = JudgeStatus::COMPILATION_ERROR;
         result.message = "Executable not found: " + ctx.exePath;
         return result;

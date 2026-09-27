@@ -4,7 +4,7 @@
 // sandbox_runner.hpp
 // CLIJudge 安全沙箱运行器
 //   Windows: Job Object + 受限令牌
-//   Linux:   fork + setrlimit + 进程组监控
+//   Linux:   命名空间阶梯(user/mnt/pid/net/ipc/uts) + 只读根 + seccomp + 进程组监控
 //
 // Windows 安全特性:
 //   1. CREATE_SUSPENDED 创建进程，绑定 Job 后再 ResumeThread，杜绝竞态逃逸
@@ -691,6 +691,15 @@ inline SandboxResult sandbox_run(
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <sched.h>
+#include <sys/syscall.h>
+#include <sys/prctl.h>
+#include <sys/mount.h>
+#include <dirent.h>
+#include <linux/seccomp.h>
+#include <linux/filter.h>
+#include <linux/audit.h>
+#include <linux/capability.h>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -789,12 +798,162 @@ inline size_t readVmHwmKB(pid_t pid) {
     return kb;
 }
 
+// ── 构造子进程最小白名单环境（语义对齐 Windows buildMinEnvBlock）──
+// 子进程不应继承父进程完整环境变量（可能含 API 密钥等敏感值）。
+// 只保留运行解释器/编译产物所需的最小集合（PATH/HOME/USER/LOGNAME/LANG/
+// LC_ALL/LC_CTYPE/TERM/TMPDIR/JAVA_HOME/TZ），extraEnv 中的 "K=V" 追加/覆盖。
+inline std::vector<std::string> buildMinEnv(const std::vector<std::string>& extraEnv = {}) {
+    const char* names[] = {
+        "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE",
+        "TERM", "TMPDIR", "JAVA_HOME", "TZ"
+    };
+    std::vector<std::string> entries;
+    for (const char* n : names) {
+        const char* v = getenv(n);
+        if (v && v[0]) entries.push_back(std::string(n) + "=" + v);
+    }
+    for (const auto& kv : extraEnv) {
+        size_t eq = kv.find('=');
+        if (eq == std::string::npos || eq == 0) continue;
+        std::string key = kv.substr(0, eq);
+        bool replaced = false;
+        for (auto& e : entries) {
+            if (e.compare(0, key.size(), key) == 0 && e.size() > key.size() && e[key.size()] == '=') {
+                e = kv;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) entries.push_back(kv);
+    }
+    return entries;
+}
+
+// ── 统计目标进程组内的进程数（maxProcesses 轮询实现）──────────
+inline size_t countPgidProcs(pid_t pgid) {
+    DIR* d = opendir("/proc");
+    if (!d) return 0;
+    size_t n = 0;
+    struct dirent* e;
+    while ((e = readdir(d)) != nullptr) {
+        if (e->d_name[0] < '1' || e->d_name[0] > '9') continue;
+        char path[300];
+        snprintf(path, sizeof(path), "/proc/%s/stat", e->d_name);
+        int fd = open(path, O_RDONLY);
+        if (fd < 0) continue;
+        char buf[512];
+        ssize_t len = read(fd, buf, sizeof(buf) - 1);
+        close(fd);
+        if (len <= 0) continue;
+        buf[len] = '\0';
+        // comm 字段可含空格/括号 → 以最后一个 ')' 之后的 state/ppid/pgrp 为准
+        char* rp = strrchr(buf, ')');
+        if (!rp) continue;
+        char state;
+        int ppid, pgrp;
+        if (sscanf(rp + 1, " %c %d %d", &state, &ppid, &pgrp) == 3 && pgrp == (int)pgid)
+            n++;
+    }
+    closedir(d);
+    return n;
+}
+
+#ifndef SECCOMP_RET_KILL_PROCESS
+#define SECCOMP_RET_KILL_PROCESS 0x80000000U
+#endif
+
+// ── 构建 seccomp 过滤器（仅 x86_64; 父进程内构建, 子进程内安装）────
+// denyProcessCreate: untrusted 且 maxProcesses==1 → 拒绝创建进程
+//   (fork/vfork/clone 无 CLONE_THREAD → EPERM; clone3 → ENOSYS 使 glibc
+//    回退到 clone; 线程创建不受限 — 对齐 Windows ActiveProcessLimit=1)。
+// 恒定规则: socket → EAFNOSUPPORT (无网络, 补 NEWNET 缺失时的兜底);
+//   敌意系统调用 → SIGSYS; 探测型 (clone3/io_uring/bpf/...) → ENOSYS。
+// 非 x86_64 架构 (如 -m32 走 i386) 一律放行。
+#ifdef __x86_64__
+inline std::vector<struct sock_filter> buildSeccompFilter(bool denyProcessCreate) {
+    std::vector<struct sock_filter> f;
+    auto stmt = [&](unsigned short code, unsigned int k) {
+        f.push_back(sock_filter{code, 0, 0, k});
+    };
+    auto jmp = [&](unsigned short code, unsigned int k, unsigned char jt, unsigned char jf) {
+        f.push_back(sock_filter{code, jt, jf, k});
+    };
+    // 架构检查: 非 x86_64 → 直接放行
+    stmt(BPF_LD | BPF_W | BPF_ABS, 4);
+    jmp(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0);
+    stmt(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+    // 载入系统调用号 (A 此前是 arch, 后续 JEQ 需要 nr)
+    stmt(BPF_LD | BPF_W | BPF_ABS, 0);
+    // 单条规则: 匹配 → 执行动作, 不匹配 → 跳过下一条 RET
+    auto rule = [&](unsigned int nr, unsigned int action) {
+        jmp(BPF_JMP | BPF_JEQ | BPF_K, nr, 0, 1);
+        stmt(BPF_RET | BPF_K, action);
+    };
+    rule(435, SECCOMP_RET_ERRNO | (unsigned int)ENOSYS);              // clone3
+    rule(41, SECCOMP_RET_ERRNO | (unsigned int)EAFNOSUPPORT);         // socket
+    if (denyProcessCreate) {
+        rule(57, SECCOMP_RET_ERRNO | (unsigned int)EPERM);            // fork
+        rule(58, SECCOMP_RET_ERRNO | (unsigned int)EPERM);            // vfork
+        // clone(56): 读 args[0] flags, CLONE_THREAD 线程 → 放行, 否则 EPERM
+        jmp(BPF_JMP | BPF_JEQ | BPF_K, 56, 0, 3);
+        stmt(BPF_LD | BPF_W | BPF_ABS, 16);
+        jmp(BPF_JMP | BPF_JSET | BPF_K, 0x00010000u, 1, 0);
+        stmt(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (unsigned int)EPERM);
+        stmt(BPF_LD | BPF_W | BPF_ABS, 0);  // A 之前是 flags → 重新载入 nr
+        rule(112, SECCOMP_RET_ERRNO | (unsigned int)EPERM);           // setsid
+        rule(109, SECCOMP_RET_ERRNO | (unsigned int)EPERM);           // setpgid
+    }
+    // 敌意系统调用 → SIGSYS (mount/namespace/ptrace/提权/时钟/模块/网络配置...)
+    static const unsigned killNrs[] = {
+        165, 166, 155, 167, 168, 308, 272, 161, 101, 310, 311, 246, 320,
+        175, 313, 176, 169, 164, 227, 305, 159, 170, 171, 172, 173, 103,
+        133, 259, 163, 154, 179, 134
+    };
+    for (unsigned int nr : killNrs) rule(nr, SECCOMP_RET_KILL_PROCESS);
+    // 探测型系统调用 → ENOSYS (运行时优雅回退)
+    static const unsigned nosysNrs[] = { 425, 426, 427, 321, 298, 323 };
+    for (unsigned int nr : nosysNrs) rule(nr, SECCOMP_RET_ERRNO | (unsigned int)ENOSYS);
+    rule(438, SECCOMP_RET_ERRNO | (unsigned int)EPERM);               // pidfd_getfd
+    stmt(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+    return f;
+}
+#endif
+
+// ── 写入 /proc 文件（子进程内 async-signal-safe, 不分配）────────
+inline bool writeProcFile(const char* path, const char* s) {
+    int fd = open(path, O_WRONLY);
+    if (fd < 0) return false;
+    ssize_t n = (ssize_t)strlen(s);
+    bool ok = (write(fd, s, (size_t)n) == n);
+    close(fd);
+    return ok;
+}
+
+// ── fork/clone 子进程初始化上下文（父进程内构建, 子进程只读）──────
+struct LinuxChildCtx {
+    int level = 0;               // 2=完整命名空间 1=user+mnt 0=普通 fork
+    std::string workDirReal;     // canonical 后的可写绑定路径
+    std::string tmpDir;          // canonical /tmp
+    bool applySeccomp = false;
+    std::vector<struct sock_filter> filter;
+    char uidMap[64];
+    char gidMap[64];
+};
+
 // ── 主运行函数（签名与 Windows 分支一致）────────────────────
-// 隔离手段: 独立进程组 + setrlimit(CPU/AS/STACK/FPILE/CORE) + 轮询 VmHWM/墙钟
-// 说明: maxProcesses 在 Linux 上无法不依赖 cgroup 可靠地按进程树限制，
-//       此处不生效（预留参数，保持签名一致）。
-// io/workingDir/extraEnv/outputLimitBytes: 与 Windows 分支语义一致。
-// trusted: 与 Windows 分支签名保持一致 (POSIX 分支无令牌降权, 忽略)。
+// 隔离手段 (对齐 Windows 分支语义):
+//   1. 命名空间阶梯: trusted=false 依次尝试 CLONE_NEWUSER|NEWNS|NEWPID|NEWNET|
+//      NEWIPC|NEWUTS → 仅 USER|NS → 普通 fork; trusted=true 直接普通 fork。
+//   2. 只读根 + 可写绑定: make-rprivate / → 绑定 workDir//tmp → 全新 /proc、
+//      卸载 /sys → remount,bind,ro / (任一步失败则跳过, 文件权限兜底)。
+//   3. 网络: NEWNET 空网卡 + seccomp 拒绝 socket 双重兜底。
+//   4. 环境: 最小白名单 (buildMinEnv, 语义对齐 Windows) + extraEnv。
+//   5. maxProcesses: untrusted 且上限为 1 时 seccomp 拒绝创建进程 (对齐
+//      ActiveProcessLimit=1: 进程创建失败而线程不受限); 其余场景父进程轮询
+//      进程组计数, 超限即整组 SIGKILL (meta 信号 SIGKILL → 上层判 TLE)。
+//   6. seccomp 黑名单: mount/ptrace/... → SIGSYS; clone3/io_uring/bpf → ENOSYS;
+//      非 x86_64 架构放行 (兼容 -m32)。
+// io/workingDir/extraEnv/outputLimitBytes/trusted: 语义与 Windows 分支一致。
 inline SandboxResult sandbox_run(
     unsigned int timeLimitMs,
     size_t memLimitMB,
@@ -810,9 +969,7 @@ inline SandboxResult sandbox_run(
     bool trusted = false
 ) {
     SandboxResult result = { 0, 0, 0, "null", false };
-    (void)maxProcesses;
     (void)fileIoMode;
-    (void)trusted;
 
     const size_t memLimitKB = memLimitMB * 1024;
     // RLIMIT_AS 留出富余，作为轮询间隙内疯狂分配的主机保护兜底；
@@ -823,8 +980,8 @@ inline SandboxResult sandbox_run(
         memLimitMB > 0 ? (rlim_t)memLimitMB * 1024 * 1024 : (rlim_t)0;
 
     // ── fork 前在父进程内构建 argv/envp 并解析路径 ────────────
-    // fork 后子进程只做 async-signal-safe 操作（setrlimit/open/dup2/chdir/execve），
-    // 多线程评测下避免在子进程里调用分配器造成死锁。
+    // fork 后子进程只做 async-signal-safe 操作（open/write/dup2/mount/chdir/
+    // prctl/execve 等系统调用），多线程评测下避免在子进程里调用分配器造成死锁。
     std::string resolved = resolveInPath(exePath);
 
     std::vector<std::string> storage;
@@ -836,34 +993,64 @@ inline SandboxResult sandbox_run(
     for (auto& s : storage) argv.push_back(&s[0]);
     argv.push_back(nullptr);
 
-    std::vector<std::string> envStorage;
-    for (char** e = environ; e && *e; ++e) envStorage.push_back(*e);
-    for (const auto& kv : extraEnv) {
-        size_t eq = kv.find('=');
-        if (eq == std::string::npos || eq == 0) continue;
-        std::string key = kv.substr(0, eq);
-        bool replaced = false;
-        for (auto& e : envStorage) {
-            if (e.compare(0, key.size(), key) == 0 && e.size() > key.size() && e[key.size()] == '=') {
-                e = kv;
-                replaced = true;
-                break;
-            }
-        }
-        if (!replaced) envStorage.push_back(kv);
-    }
+    std::vector<std::string> envStorage = buildMinEnv(extraEnv);
     std::vector<char*> envp;
     envp.reserve(envStorage.size() + 1);
     for (auto& s : envStorage) envp.push_back(&s[0]);
     envp.push_back(nullptr);
 
-    pid_t pid = fork();
+    // ── 克隆上下文与命名空间阶梯 ─────────────────────────────
+    LinuxChildCtx ctx;
+    snprintf(ctx.uidMap, sizeof(ctx.uidMap), "0 %u 1\n", (unsigned)geteuid());
+    snprintf(ctx.gidMap, sizeof(ctx.gidMap), "0 %u 1\n", (unsigned)getegid());
+    {
+        std::error_code ec;
+        if (!workingDir.empty()) {
+            ctx.workDirReal = std::filesystem::weakly_canonical(workingDir, ec).string();
+            if (ec) ctx.workDirReal = workingDir;
+        }
+        ctx.tmpDir = std::filesystem::weakly_canonical(std::string("/tmp"), ec).string();
+        if (ec) ctx.tmpDir.clear();
+    }
+    // 进程数控制: untrusted 且上限 1 → seccomp 直接拒绝创建进程 (对齐 Windows
+    // ActiveProcessLimit=1 的失败语义, 线程不受限); 其余场景父进程轮询进程组计数。
+    bool denyProcessCreate = !trusted && maxProcesses == 1;
+#ifdef __x86_64__
+    ctx.applySeccomp = !trusted;
+    if (ctx.applySeccomp) ctx.filter = buildSeccompFilter(denyProcessCreate);
+#else
+    denyProcessCreate = false; // 非 x86_64 无过滤器规则 → 退回轮询计数
+#endif
+
+    static const int kLevelFlags[3] = {
+        CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWNET |
+        CLONE_NEWIPC | CLONE_NEWUTS,
+        CLONE_NEWUSER | CLONE_NEWNS,
+        0
+    };
+    const int attempts = trusted ? 1 : 3;
+    pid_t pid = -1;
+    for (int a = 0; a < attempts; a++) {
+        ctx.level = trusted ? 0 : 2 - a;
+        int flags = trusted ? 0 : kLevelFlags[a];
+        pid = (flags == 0) ? fork()
+                           : (pid_t)syscall(SYS_clone, (unsigned long)(flags | SIGCHLD), 0);
+        if (pid >= 0) break;
+    }
     if (pid < 0) {
         writeMeta(metaFile, -1, 0, 0, "SYSTEM_ERROR");
         return result;
     }
 
     if (pid == 0) {
+        // 用户命名空间映射 (level>=1): 子进程自写; 失败即中止
+        if (ctx.level >= 1) {
+            writeProcFile("/proc/self/setgroups", "deny");
+            if (!writeProcFile("/proc/self/uid_map", ctx.uidMap) ||
+                !writeProcFile("/proc/self/gid_map", ctx.gidMap))
+                _exit(126);
+        }
+
         // 独立进程组：超时/OOM 时父进程 kill(-pid) 可整组击杀
         setpgid(0, 0);
 
@@ -912,8 +1099,36 @@ inline SandboxResult sandbox_run(
             if (errFd >= 0 && errFd != STDERR_FILENO) { dup2(errFd, STDERR_FILENO); if (errFd > STDERR_FILENO) close(errFd); }
         }
 
+        // 命名空间挂载: 私有化 → 绑定可写目录 → 全新 /proc → 卸载 /sys → 只读根
+        if (ctx.level >= 1) {
+            if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) == 0) {
+                if (!ctx.workDirReal.empty())
+                    mount(ctx.workDirReal.c_str(), ctx.workDirReal.c_str(), NULL, MS_BIND, NULL);
+                if (!ctx.tmpDir.empty())
+                    mount(ctx.tmpDir.c_str(), ctx.tmpDir.c_str(), NULL, MS_BIND, NULL);
+                umount2("/proc", MNT_DETACH);
+                mount("proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL);
+                umount2("/sys", MNT_DETACH);
+                mount(NULL, "/", NULL,
+                      MS_REMOUNT | MS_BIND | MS_RDONLY | MS_NOSUID | MS_NODEV, NULL);
+            }
+        }
+
         if (!workingDir.empty()) {
             if (chdir(workingDir.c_str()) != 0) _exit(126);
+        }
+
+        // 能力清理: user namespace 内的 root 在 exec 前全部放弃
+        if (ctx.level >= 1) {
+            for (int cap = 0; cap < 64; cap++)
+                prctl(PR_CAPBSET_DROP, (unsigned long)cap, 0, 0, 0);
+            struct __user_cap_header_struct capHdr;
+            struct __user_cap_data_struct capData[2];
+            memset(&capHdr, 0, sizeof(capHdr));
+            memset(capData, 0, sizeof(capData));
+            capHdr.version = _LINUX_CAPABILITY_VERSION_3;
+            capHdr.pid = 0;
+            syscall(SYS_capset, &capHdr, capData);
         }
 
         // 关闭继承自父进程的全部多余 fd。多线程并行评测/双进程管道评测下,
@@ -923,6 +1138,16 @@ inline SandboxResult sandbox_run(
             long openMax = sysconf(_SC_OPEN_MAX);
             if (openMax < 0 || openMax > 4096) openMax = 1024;
             for (int fd = 3; fd < (int)openMax; fd++) close(fd);
+        }
+
+        prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+
+        if (ctx.applySeccomp) {
+            struct sock_fprog prog;
+            prog.len = (unsigned short)ctx.filter.size();
+            prog.filter = ctx.filter.data();
+            if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) != 0)
+                _exit(126); // 过滤器安装失败 → 拒绝执行 (fail-closed)
         }
 
         execve(resolved.c_str(), argv.data(), envp.data());
@@ -937,8 +1162,10 @@ inline SandboxResult sandbox_run(
     struct rusage ru;
     memset(&ru, 0, sizeof(ru));
 
-    bool exited = false, timedOut = false, oom = false;
+    bool exited = false, timedOut = false, oom = false, procLimited = false;
     size_t peakKB = 0;
+    // seccomp 已拒绝创建进程时无需轮询计数; 其余 (trusted / 上限>1) 靠轮询兜底
+    const bool pollProcCount = (maxProcesses > 0) && !denyProcessCreate;
 
     while (true) {
         pid_t w = wait4(pid, &status, WNOHANG, &ru);
@@ -960,13 +1187,21 @@ inline SandboxResult sandbox_run(
             break;
         }
 
+        if (pollProcCount && countPgidProcs(pid) > (size_t)maxProcesses) {
+            procLimited = true;
+            break;
+        }
+
         usleep(10 * 1000); // 10ms
     }
 
-    // 超时/OOM: 击杀整个进程组并收割
-    if (timedOut || oom) {
+    // 超时/OOM/进程数超限: 击杀整个进程组并收割
+    if (timedOut || oom || procLimited) {
         kill(-pid, SIGKILL);
         wait4(pid, &status, 0, &ru);
+    } else if (exited) {
+        // 正常退出: 清理残余的组内进程 (对齐 Windows KILL_ON_JOB_CLOSE)
+        kill(-pid, SIGKILL);
     }
 
     // 回收时的 rusage 复核（覆盖轮询间隙超限后进程自行退出的场景）
@@ -1003,7 +1238,7 @@ inline SandboxResult sandbox_run(
 
     const char* signal = "null";
     if (oom) signal = "MEMORY_LIMIT";
-    else if (timedOut) signal = "SIGKILL";
+    else if (timedOut || procLimited) signal = "SIGKILL";
     else if (outLimited) signal = "OUTPUT_LIMIT";
 
     writeMeta(metaFile, exitCode, timeUsed, peakKB, signal);
