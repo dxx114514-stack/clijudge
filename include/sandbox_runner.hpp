@@ -41,6 +41,8 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <algorithm>
+#include <cctype>
 
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "userenv.lib")
@@ -453,9 +455,30 @@ inline SandboxResult sandbox_run(
 
     // 构建命令行（exe 路径含空格时必须整体加引号）
     std::string cmdLine = quoteCmdArg(exePath);
-    for (const auto& arg : args) {
-        cmdLine += " ";
-        cmdLine += quoteCmdArg(arg.c_str());
+    // cmd.exe /c 的尾部由 cmd 自身的引号规则解析（非 CRT, 不认 \" 转义）:
+    // 尾部若以引号开头, cmd 会剥掉首尾各一个引号 —— 因此整体再包一层引号,
+    // 剥离后恰好保留命令内部的真实引号。
+    bool cmdShellTail = false;
+    {
+        std::string base = exePath;
+        size_t bp = base.find_last_of("/\\");
+        if (bp != std::string::npos) base = base.substr(bp + 1);
+        std::transform(base.begin(), base.end(), base.begin(),
+                       [](unsigned char ch) { return (char)std::tolower(ch); });
+        cmdShellTail = (base == "cmd.exe") && !args.empty() && args[0] == "/c";
+    }
+    if (cmdShellTail) {
+        cmdLine += " /c \"";
+        for (size_t i = 1; i < args.size(); i++) {
+            if (i > 1) cmdLine += " ";
+            cmdLine += args[i];
+        }
+        cmdLine += "\"";
+    } else {
+        for (const auto& arg : args) {
+            cmdLine += " ";
+            cmdLine += quoteCmdArg(arg.c_str());
+        }
     }
     std::vector<char> cmdBuf(cmdLine.begin(), cmdLine.end());
     cmdBuf.push_back('\0');

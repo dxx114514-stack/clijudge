@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <cstdlib>
 #include "platform.h"
+#include "settings.h"
 #include "sandbox_runner.hpp"
 
 namespace clijudge {
@@ -34,6 +35,7 @@ struct RunConfig {
 // 根据文件扩展名获取编译/运行命令
 std::string getRunCommand(const std::string& codePath, const std::string& workDir) {
     std::string ext = fs::path(codePath).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
     if (ext == ".cpp" || ext == ".cc" || ext == ".cxx") {
         // C++ 编译并运行
@@ -57,6 +59,26 @@ std::string getRunCommand(const std::string& codePath, const std::string& workDi
     } else if (ext == ".js") {
         // Node.js 运行
         return "node \"" + codePath + "\"";
+    } else if (const auto* cl = clijudge::settings::findByExtension(ext)) {
+        // 自定义语言 (config.json judge.custom_languages), shell 复合命令: token 加引号
+        std::string exePath = platform::pathJoin(workDir, std::string("output") + platform::exeSuffix());
+        std::string absCode = fs::absolute(codePath).string();
+        auto build = [&](const std::string& tpl) {
+            auto argv = clijudge::settings::expandCommand(
+                clijudge::settings::tokenizeCommand(tpl), {absCode}, exePath, workDir);
+            std::string out;
+            for (size_t i = 0; i < argv.size(); ++i) {
+                if (i) out += " ";
+                if (argv[i].find_first_of("/\\:") != std::string::npos)
+                    out += "\"" + argv[i] + "\"";
+                else
+                    out += argv[i];
+            }
+            return out;
+        };
+        std::string cmd = build(cl->run);
+        if (!cl->compile.empty()) cmd = build(cl->compile) + " && " + cmd;
+        return cmd;
     } else {
         // 尝试直接运行
         return "\"" + codePath + "\"";
@@ -151,6 +173,7 @@ void showHelp() {
     std::cout << "  Python (.py)" << std::endl;
     std::cout << "  Java (.java)" << std::endl;
     std::cout << "  JavaScript (.js)" << std::endl;
+    std::cout << "  自定义语言 (config.json judge.custom_languages 按扩展名注册)" << std::endl;
 }
 
 } // namespace ide

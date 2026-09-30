@@ -66,11 +66,34 @@ data/
 | `.py` | `python3`（Windows 为 `python`） | 免编译，按 PATH 解析解释器 |
 | `.java` | `javac -d <workdir>` → `java -cp <workdir> <MainClass>` | JVM 虚拟内存占用大，内存限力建议 ≥ 2048MB |
 | `.js` | `node` | 免编译 |
-| 其它 | — | 评测为 `CE`（Unsupported language） |
+| 其它 | 自定义语言（见下） | 未注册的扩展名评测为 `CE`（Unsupported language） |
 
 - 仅 `answers_only` 题型接受**目录**或 **`.zip`** 提交（逐文件比对同名答案）。
 - 编译器本身在可信模式下运行，超时上限 `judge.compile_time_limit_ms`（默认 10000ms）；选手代码在沙箱中执行。
 - 沙箱：Windows 使用 Job Object + 受限令牌；Linux 使用 user/mount/pid/net/uts/ipc 命名空间 + seccomp 系统调用过滤 + 只读根文件系统 + 环境变量白名单 + 子进程数上限（超出后 SIGKILL 击杀）。
+
+#### 自定义语言（`judge.custom_languages`）
+
+内置语言之外的扩展名（如 C#、Kotlin 或自研语言）可在 `data/config.json` 注册后评测：
+
+```json
+{
+  "judge": {
+    "custom_languages": {
+      "csharp":    { "extensions": [".cs"], "compile": "csc /nologo /out:{exe} {src}", "run": "{exe}" },
+      "judgelang": { "extensions": [".jlang", ".judgelang"], "compile": "", "run": "judgelang {src}" }
+    }
+  }
+}
+```
+
+- `extensions` 关联扩展名（自动小写、补 `.`）；`run` 必填，为运行命令模板；`compile` 为编译命令模板，**留空 = 脚本语言**（跳过编译直接执行 `run`）。无效条目（无扩展名或无 `run`）被忽略。
+- 模板占位符：`{src}` 选手源文件绝对路径（多源文件各自独立成参）、`{exe}` 编译产物路径（`<workDir>/program<exeSuffix>`）、`{dir}` 编译工作目录绝对路径。
+- 模板按空白分词（可用双引号包裹含空格的片段），参数直传沙箱、**不经 shell**；编译命令与内置编译器一样以可信模式运行，受 `compile_time_limit_ms` 约束；`run` 引用了 `{exe}` 但产物缺失 → CE `Compilation produced no output`。
+- 命令可为 PATH 上的裸名（如 `python3`、`judgelang`，沙箱环境白名单保留 PATH）或绝对路径；**内置扩展名优先**，与自定义注册冲突时内置生效。
+- `custom_languages` 键**缺失**时自动内置示例语言 `judgelang`（`.jlang` / `.judgelang`，运行 `judgelang {src}`，需自行在 PATH 上提供同名解释器，否则提交判 `SE`）；显式给出该键（包括空对象 `{}`）则完全以配置为准。
+- 编译器按扩展名识别源语言的（如 g++/gcc），需自行在 `compile` 中指定语言，如 `g++ -O2 -x c++ -o {exe} {src}`。
+- `clijudge ide run` 同样支持已注册的自定义语言（编译 + 运行经 shell 复合执行）。
 
 ### 比较模式（`-compare`）
 
@@ -106,6 +129,7 @@ data/
 | `extra_time_ratio` | 0.1 | 额外时间比（贴线 TLE 缓冲） |
 | `file_write_limit_kb` | 16384 | 子进程写文件大小上限 |
 | `env` | `{}` | 追加给子进程的环境变量 |
+| `custom_languages` | 内置 `judgelang` | 自定义评测语言注册表（见「语言与编译 → 自定义语言」） |
 
 ### 显示语言
 

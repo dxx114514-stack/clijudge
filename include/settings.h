@@ -16,9 +16,14 @@
 //       "max_judging_threads": 4,
 //       "extra_time_ratio": 0.1,
 //       "file_write_limit_kb": 16384,
-//       "env": { "KEY": "VALUE" }
+//       "env": { "KEY": "VALUE" },
+//       "custom_languages": {
+//         "judgelang": { "extensions": [".jlang", ".judgelang"], "compile": "", "run": "judgelang {src}" }
+//       }
 //     }
 //   }
+// custom_languages 键缺失时自动内置 judgelang 示例语言;
+// compile 为空 = 脚本语言, 模板占位符 {src}/{exe}/{dir}, 见 CustomLanguage 注释。
 
 #include <string>
 #include <vector>
@@ -42,6 +47,89 @@ inline std::string configPath() {
     return platform::pathJoin(platform::dataDir(), "config.json");
 }
 
+// ── 自定义评测语言 ─────────────────────────────────────────
+// 按扩展名注册内置语言之外的可评测语言 (config.json judge.custom_languages)
+// 模板占位符:
+//   {src} - 选手源文件绝对路径 (多个源文件时独立成参)
+//   {exe} - 编译产物路径 (<workDir>/program<exeSuffix>)
+//   {dir} - 编译工作目录绝对路径
+// compile 为空 → 脚本语言, 直接执行 run;
+// 命令按空白分词 (支持双引号包裹含空白的片段), 参数直传沙箱, 不经 shell.
+struct CustomLanguage {
+    std::string name;
+    std::vector<std::string> extensions;  // 小写、含点 (".cpp")
+    std::string compile;
+    std::string run;
+};
+
+// 内置示例语言 judgelang: .jlang 源文件交由 PATH 上的 judgelang 解释器执行
+inline CustomLanguage defaultJudgelang() {
+    CustomLanguage c;
+    c.name = "judgelang";
+    c.extensions = {".jlang", ".judgelang"};
+    c.run = "judgelang {src}";
+    return c;
+}
+
+inline std::string normalizeExt(std::string ext) {
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char ch) { return (char)std::tolower(ch); });
+    if (!ext.empty() && ext[0] != '.') ext = "." + ext;
+    return ext;
+}
+
+// 命令模板分词: 空白分隔, 双引号内保留空白
+inline std::vector<std::string> tokenizeCommand(const std::string& tpl) {
+    std::vector<std::string> out;
+    std::string cur;
+    bool inQuote = false;
+    for (char c : tpl) {
+        if (c == '"') { inQuote = !inQuote; continue; }
+        if (!inQuote && (c == ' ' || c == '\t')) {
+            if (!cur.empty()) { out.push_back(cur); cur.clear(); }
+            continue;
+        }
+        cur += c;
+    }
+    if (!cur.empty()) out.push_back(cur);
+    return out;
+}
+
+// 展开模板占位符 → argv (sources 会先转为绝对路径)
+inline std::vector<std::string> expandCommand(const std::vector<std::string>& tokens,
+                                              const std::vector<std::string>& sources,
+                                              const std::string& exePath,
+                                              const std::string& workDir) {
+    auto replaceAll = [](std::string& s, const std::string& from, const std::string& to) {
+        if (from.empty()) return;
+        size_t pos = 0;
+        while ((pos = s.find(from, pos)) != std::string::npos) {
+            s.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+    };
+    std::vector<std::string> absSources;
+    absSources.reserve(sources.size());
+    for (const auto& s : sources) {
+        std::error_code ec;
+        fs::path p = fs::absolute(s, ec);
+        absSources.push_back(ec ? s : p.string());
+    }
+
+    std::vector<std::string> out;
+    for (auto tok : tokens) {
+        if (tok == "{src}") {
+            for (const auto& s : absSources) out.push_back(s);
+            continue;
+        }
+        replaceAll(tok, "{exe}", exePath);
+        replaceAll(tok, "{dir}", workDir);
+        if (!absSources.empty()) replaceAll(tok, "{src}", absSources.front());
+        out.push_back(tok);
+    }
+    return out;
+}
+
 // 评测设置
 struct JudgeSettings {
     int compileTimeLimitMs = 10000;          // 编译超时 (LemonLime getCompileTimeLimit)
@@ -53,6 +141,8 @@ struct JudgeSettings {
     double extraTimeRatio = 0.1;             // 额外时间比 (defaultExtraTimeRatio)
     long long fileWriteLimitKB = 16384;      // 子进程写文件大小上限 (RLIMIT_FSIZE)
     std::map<std::string, std::string> env;  // 追加到子进程的环境变量
+    // 自定义评测语言 (键缺失时默认内置 judgelang; 显式给出则以配置为准)
+    std::vector<CustomLanguage> customLanguages = {defaultJudgelang()};
 };
 
 inline int clampInt(int v, int lo, int hi) {
@@ -80,6 +170,27 @@ inline JudgeSettings fromJson(const json& j) {
             if (it.value().is_string()) s.env[it.key()] = it.value().get<std::string>();
         }
     }
+    if (j.contains("custom_languages") && j["custom_languages"].is_object()) {
+        s.customLanguages.clear();
+        for (auto it = j["custom_languages"].begin(); it != j["custom_languages"].end(); ++it) {
+            const json& v = it.value();
+            if (!v.is_object()) continue;
+            CustomLanguage c;
+            c.name = it.key();
+            if (v.contains("extensions") && v["extensions"].is_array()) {
+                for (const auto& e : v["extensions"]) {
+                    if (e.is_string()) {
+                        std::string ne = normalizeExt(e.get<std::string>());
+                        if (!ne.empty() && ne != ".") c.extensions.push_back(ne);
+                    }
+                }
+            }
+            c.compile = v.value("compile", "");
+            c.run = v.value("run", "");
+            if (c.extensions.empty() || c.run.empty()) continue;  // 无效条目跳过
+            s.customLanguages.push_back(std::move(c));
+        }
+    }
     return s;
 }
 
@@ -96,6 +207,15 @@ inline json toJson(const JudgeSettings& s) {
     json env = json::object();
     for (const auto& [k, v] : s.env) env[k] = v;
     j["env"] = env;
+    json cl = json::object();
+    for (const auto& c : s.customLanguages) {
+        json e;
+        e["extensions"] = c.extensions;
+        e["compile"] = c.compile;
+        e["run"] = c.run;
+        cl[c.name] = e;
+    }
+    j["custom_languages"] = cl;
     return j;
 }
 
@@ -149,6 +269,16 @@ inline int getMaxJudgingThreads()         { return get().maxJudgingThreads; }
 inline double getDefaultExtraTimeRatio()  { return get().extraTimeRatio; }
 inline long long getFileWriteLimitBytes() { return get().fileWriteLimitKB * 1024; }
 inline const std::map<std::string, std::string>& getExtraEnv() { return get().env; }
+
+// 按扩展名查找自定义语言 (ext 需为小写、含点); 未注册返回 nullptr
+inline const CustomLanguage* findByExtension(const std::string& ext) {
+    for (const auto& c : get().customLanguages) {
+        for (const auto& e : c.extensions) {
+            if (e == ext) return &c;
+        }
+    }
+    return nullptr;
+}
 
 // 评测设置转为子进程环境变量列表 ("K=V")
 inline std::vector<std::string> extraEnvList() {

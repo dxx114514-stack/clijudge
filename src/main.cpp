@@ -84,6 +84,7 @@ void showHelp() {
     std::cout << "  ide       - " << clijudge::lang::tr("help.ide", "IDE functions") << std::endl;
     std::cout << "  problem   - " << clijudge::lang::tr("help.problem", "Problem management") << std::endl;
     std::cout << "  submit    - " << clijudge::lang::tr("help.submit", "Submission management") << std::endl;
+    std::cout << "  displaylang - " << clijudge::lang::tr("help.displaylang", "Display language settings") << std::endl;
     std::cout << std::endl;
     std::cout << clijudge::lang::tr("help.more_info", "Use 'clijudge.exe <command> help' for more information about a command.") << std::endl;
 }

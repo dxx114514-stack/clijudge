@@ -174,6 +174,13 @@ inline std::string statusToDisplay(JudgeStatus s) {
         case JudgeStatus::COMPILATION_ERROR: key = "judge.compile_error"; break;
         case JudgeStatus::SYSTEM_ERROR: key = "judge.system_error"; break;
         case JudgeStatus::SKIPPED: key = "judge.skipped"; break;
+        case JudgeStatus::PRESENTATION_ERROR: key = "judge.presentation_error"; break;
+        case JudgeStatus::OUTPUT_LIMIT_EXCEEDED: key = "judge.output_limit"; break;
+        case JudgeStatus::PARTIALLY_CORRECT: key = "judge.partially_correct"; break;
+        case JudgeStatus::INVALID_SPJ: key = "judge.invalid_spj"; break;
+        case JudgeStatus::SPECIAL_JUDGE_TLE: key = "judge.special_judge_tle"; break;
+        case JudgeStatus::SPECIAL_JUDGE_RE: key = "judge.special_judge_runtime"; break;
+        case JudgeStatus::INTERACTOR_ERROR: key = "judge.interactor_error"; break;
         default: break;
     }
     if (key) {
@@ -456,13 +463,14 @@ struct CompileResult {
     std::string language;
 };
 
-// 获取语言名称
+// 获取语言名称 (内置语言优先, 其余按注册的自定义语言)
 inline std::string getLanguageName(const std::string& ext) {
     if (ext == ".cpp" || ext == ".cc" || ext == ".cxx") return "C++";
     if (ext == ".c") return "C";
     if (ext == ".py") return "Python";
     if (ext == ".java") return "Java";
     if (ext == ".js") return "JavaScript";
+    if (const auto* cl = settings::findByExtension(ext)) return cl->name;
     return "Unknown";
 }
 
@@ -491,6 +499,119 @@ inline bool isElfExecutable(const std::string& path) {
 // 检查是否为脚本语言
 inline bool isScript(const std::string& ext) {
     return ext == ".py" || ext == ".js";
+}
+
+// 自定义语言装配 (config.json judge.custom_languages):
+// compile 非空 → 可信执行编译模板 (同编译器语义) 再执行 run;
+// compile 为空 → 脚本式, 直接执行 run. 产物缺失只在 run 引用 {exe} 时报错。
+inline CompileResult compileCustomLanguage(const settings::CustomLanguage& lang,
+                                           const std::vector<std::string>& sources,
+                                           const std::string& workDir,
+                                           const std::string& exeName) {
+    CompileResult result;
+    result.language = lang.name;
+    fs::create_directories(workDir);
+    std::string exePath = platform::pathJoin(workDir, exeName + getExeExtension());
+    std::string cwd = fs::absolute(workDir).string();
+
+    auto expand = [&](const std::string& tpl) {
+        return settings::expandCommand(settings::tokenizeCommand(tpl), sources, exePath, cwd);
+    };
+
+    if (lang.compile.empty()) {
+        auto argv = expand(lang.run);
+        if (argv.empty()) {
+            result.error = "Custom language '" + lang.name + "' has empty run command";
+            return result;
+        }
+        result.exePath = argv.front();
+        result.exeArgs.assign(argv.begin() + 1, argv.end());
+        result.success = true;
+        return result;
+    }
+
+    // ── 编译阶段 (可信运行, 捕获输出) ──
+    auto cArgv = expand(lang.compile);
+    if (cArgv.empty()) {
+        result.error = "Custom language '" + lang.name + "' has empty compile command";
+        return result;
+    }
+    std::string compiler = cArgv.front();
+    std::vector<std::string> compilerArgs(cArgv.begin() + 1, cArgv.end());
+
+    std::string outFile = platform::pathJoin(workDir, "_cc_stdout.txt");
+    std::string errFile = platform::pathJoin(workDir, "_cc_stderr.txt");
+    std::string metaFile = platform::pathJoin(workDir, "_cc_meta.json");
+    std::string inDummy = platform::pathJoin(workDir, "_cc_stdin.txt");
+    writeFileContent(inDummy, "");
+
+    SandboxStdio io;
+    io.inherit = false;
+    io.stdinPath = inDummy;
+    io.stdoutPath = outFile;
+    io.stderrPath = errFile;
+
+    clijudge::sandbox_run(
+        settings::getCompileTimeLimit(),
+        0,
+        64,
+        metaFile.c_str(),
+        compiler.c_str(),
+        compilerArgs,
+        false,
+        &io,
+        cwd,
+        settings::extraEnvList(),
+        0,
+        true   // 同编译器: 可信运行
+    );
+
+    json meta = readMetaFile(metaFile);
+    if (meta.is_null()) {
+        result.error = "System Error: compiler did not run";
+        std::cerr << "[compile] system error: " << compiler << std::endl;
+        return result;
+    }
+    std::string signal = meta.value("signal", "null");
+    int exitCode = meta.value("exit_code", 1);
+    std::string output = readFileContent(outFile) + readFileContent(errFile);
+    if (output.size() > 16384) output = output.substr(0, 16384) + "\n... (truncated)";
+
+    if (signal == "SIGKILL") {
+        result.error = "Compilation Time Limit Exceeded";
+        std::cerr << "[compile] time limit exceeded" << std::endl;
+        return result;
+    }
+    if (signal == "SYSTEM_ERROR") {
+        result.error = "System Error during compilation";
+        std::cerr << "[compile] system error" << std::endl;
+        return result;
+    }
+    if (exitCode != 0) {
+        result.error = output.empty()
+            ? ("Compilation failed (exit code: " + std::to_string(exitCode) + ")")
+            : output;
+        std::cerr << result.error << std::endl;
+        return result;
+    }
+
+    // ── 运行命令 ──
+    std::string runTpl = lang.run;
+    bool usesExe = runTpl.find("{exe}") != std::string::npos;
+    auto rArgv = expand(runTpl);
+    if (rArgv.empty()) {
+        result.error = "Custom language '" + lang.name + "' has empty run command";
+        return result;
+    }
+    if (usesExe && !fs::exists(exePath)) {
+        result.error = "Compilation produced no output";
+        std::cerr << "[compile] produced no output" << std::endl;
+        return result;
+    }
+    result.exePath = rArgv.front();
+    result.exeArgs.assign(rArgv.begin() + 1, rArgv.end());
+    result.success = true;
+    return result;
 }
 
 // 编译 (沙箱化: 编译超时 = settings.compile_time_limit_ms, 捕获输出)
@@ -558,6 +679,8 @@ inline CompileResult compileSources(const std::vector<std::string>& sources,
         argv.push_back("-d");
         argv.push_back(fs::absolute(workDir).string());
         for (const auto& s : sources) argv.push_back(fs::absolute(s).string());
+    } else if (const auto* cl = settings::findByExtension(ext)) {
+        return compileCustomLanguage(*cl, sources, workDir, exeName);
     } else {
         result.error = "Unsupported language: " + ext;
         return result;
