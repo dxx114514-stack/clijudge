@@ -6,6 +6,10 @@
 //
 // 子命令:
 //   run [代码路径] [in文件路径] - 运行代码
+//
+// 实现: 与评测共用 judge::compileSources（可信沙箱编译、输出捕获），
+// 运行阶段以结构化 argv 直接进沙箱（不经 cmd.exe / sh），输入文件通过
+// SandboxStdio 重定向到 stdin，stdout/stderr 保持继承终端。
 
 #include <string>
 #include <fstream>
@@ -13,8 +17,10 @@
 #include <iostream>
 #include <filesystem>
 #include <cstdlib>
+#include <algorithm>
 #include "platform.h"
 #include "settings.h"
+#include "judge.h"
 #include "sandbox_runner.hpp"
 
 namespace clijudge {
@@ -22,71 +28,15 @@ namespace ide {
 
 namespace fs = std::filesystem;
 
-// 运行配置
-struct RunConfig {
-    std::string codePath;
-    std::string inputPath;
-    std::string timeLimit = "1000";     // 默认1秒
-    std::string memoryLimit = "256";    // 默认256MB
-    std::string workDir;
-    std::string metaFile;
-};
-
-// 根据文件扩展名获取编译/运行命令
-std::string getRunCommand(const std::string& codePath, const std::string& workDir) {
-    std::string ext = fs::path(codePath).extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
-    if (ext == ".cpp" || ext == ".cc" || ext == ".cxx") {
-        // C++ 编译并运行
-        std::string exePath = platform::pathJoin(workDir, std::string("output") + platform::exeSuffix());
-        return "g++ -o \"" + exePath + "\" \"" + codePath + "\" && \"" + exePath + "\"";
-    } else if (ext == ".c") {
-        // C 编译并运行
-        std::string exePath = platform::pathJoin(workDir, std::string("output") + platform::exeSuffix());
-        return "gcc -o \"" + exePath + "\" \"" + codePath + "\" && \"" + exePath + "\"";
-    } else if (ext == ".py") {
-        // Python 运行
-#ifdef _WIN32
-        return "python \"" + codePath + "\"";
-#else
-        return "python3 \"" + codePath + "\"";
-#endif
-    } else if (ext == ".java") {
-        // Java 运行
-        std::string className = fs::path(codePath).stem().string();
-        return "javac \"" + codePath + "\" && java -cp \"" + fs::path(codePath).parent_path().string() + "\" " + className;
-    } else if (ext == ".js") {
-        // Node.js 运行
-        return "node \"" + codePath + "\"";
-    } else if (const auto* cl = clijudge::settings::findByExtension(ext)) {
-        // 自定义语言 (config.json judge.custom_languages), shell 复合命令: token 加引号
-        std::string exePath = platform::pathJoin(workDir, std::string("output") + platform::exeSuffix());
-        std::string absCode = fs::absolute(codePath).string();
-        auto build = [&](const std::string& tpl) {
-            auto argv = clijudge::settings::expandCommand(
-                clijudge::settings::tokenizeCommand(tpl), {absCode}, exePath, workDir);
-            std::string out;
-            for (size_t i = 0; i < argv.size(); ++i) {
-                if (i) out += " ";
-                if (argv[i].find_first_of("/\\:") != std::string::npos)
-                    out += "\"" + argv[i] + "\"";
-                else
-                    out += argv[i];
-            }
-            return out;
-        };
-        std::string cmd = build(cl->run);
-        if (!cl->compile.empty()) cmd = build(cl->compile) + " && " + cmd;
-        return cmd;
-    } else {
-        // 尝试直接运行
-        return "\"" + codePath + "\"";
-    }
+// 由 judge::compileSources 处理的语言扩展（其余扩展名尝试直接执行）
+inline bool isKnownLanguage(const std::string& ext) {
+    return ext == ".py" || ext == ".js" || ext == ".cpp" || ext == ".cc"
+        || ext == ".cxx" || ext == ".c" || ext == ".java"
+        || clijudge::settings::findByExtension(ext) != nullptr;
 }
 
 // 创建临时工作目录
-std::string createWorkDir() {
+inline std::string createWorkDir() {
     static unsigned int seq = 0;
     std::string name = "clijudge_ide_" + std::to_string(platform::pid()) + "_"
                      + std::to_string(platform::tickMs()) + "_"
@@ -97,7 +47,7 @@ std::string createWorkDir() {
 }
 
 // 清理临时目录
-void cleanupWorkDir(const std::string& workDir) {
+inline void cleanupWorkDir(const std::string& workDir) {
     try {
         if (fs::exists(workDir)) {
             fs::remove_all(workDir);
@@ -108,72 +58,83 @@ void cleanupWorkDir(const std::string& workDir) {
 }
 
 // 运行代码
-int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
+inline int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
     // 验证代码文件存在
     if (!fs::exists(codePath)) {
-        std::cerr << "错误: 代码文件未找到: " << codePath << std::endl;
+        std::cerr << "Error: code file not found: " << codePath << std::endl;
         return 1;
     }
 
     // 创建临时工作目录
     std::string workDir = createWorkDir();
     std::string metaFile = platform::pathJoin(workDir, "_meta.json");
+    std::string absCode = fs::absolute(codePath).string();
 
-    // 获取运行命令
-    std::string runCmd = getRunCommand(codePath, workDir);
+    std::string ext = fs::path(codePath).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-    // 如果有输入文件，重定向输入
-    if (!inputPath.empty() && fs::exists(inputPath)) {
-        runCmd = runCmd + " < \"" + inputPath + "\"";
+    // 编译/解析运行命令 (复用评测链路: 可信沙箱, 错误输出捕获后打印)
+    std::string exePath;
+    std::vector<std::string> exeArgs;
+    if (isKnownLanguage(ext)) {
+        auto cr = clijudge::judge::compileSources({absCode}, workDir, "output");
+        if (!cr.success) {
+            // compileSources 内部已把错误打到 stderr
+            cleanupWorkDir(workDir);
+            return 1;
+        }
+        exePath = cr.exePath;
+        exeArgs = cr.exeArgs;
+    } else {
+        // 未知扩展名: 尝试直接执行 (兼容脚本/可执行文件)
+        exePath = absCode;
     }
 
-    // 使用沙箱运行（Windows: cmd.exe /c；Linux: sh -c）
+    // 标准句柄: 有输入文件时 stdin 来自文件, stdout/stderr 仍到终端;
+    // 无输入文件时全部继承 (可交互)
+    SandboxStdio io;
+    bool useFileIn = !inputPath.empty() && fs::exists(inputPath);
+    io.inherit = !useFileIn;
+    if (useFileIn) {
+        io.stdinPath = fs::absolute(inputPath).string();
 #ifdef _WIN32
-    const char* shellExe = "cmd.exe";
-    std::vector<std::string> shellArgs = {"/c", runCmd};
-#else
-    const char* shellExe = "/bin/sh";
-    std::vector<std::string> shellArgs = {"-c", runCmd};
+        io.hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+        io.hStderr = GetStdHandle(STD_ERROR_HANDLE);
 #endif
+    }
+
+    // 沙箱运行 (无 shell: 结构化 argv, 单进程)
     auto result = clijudge::sandbox_run(
         10000,  // 10秒超时
         256,    // 256MB内存限制
-        32,     // sh 复合命令 (编译 && 运行) 需要多个进程, 超限由轮询击杀
+        1,      // 单进程 (不再经过 shell 复合命令)
         metaFile.c_str(),
-        shellExe,
-        shellArgs,
+        exePath.c_str(),
+        exeArgs,
+        false,
+        useFileIn ? &io : nullptr,
+        fs::absolute(workDir).string(),
+        clijudge::settings::extraEnvList(),
+        0,
         false
     );
 
     // 输出结果
     if (result.success) {
-        std::cout << "退出码: " << result.exitCode << std::endl;
-        std::cout << "用时: " << result.timeUsedMs << " 毫秒" << std::endl;
-        std::cout << "内存: " << result.memoryUsedKB << " KB" << std::endl;
+        std::cout << "Exit code: " << result.exitCode << std::endl;
+        std::cout << "Time: " << result.timeUsedMs << " ms" << std::endl;
+        std::cout << "Memory: " << result.memoryUsedKB << " KB" << std::endl;
         if (strcmp(result.signal, "null") != 0) {
-            std::cout << "信号: " << result.signal << std::endl;
+            std::cout << "Signal: " << result.signal << std::endl;
         }
     } else {
-        std::cerr << "沙箱运行代码失败。" << std::endl;
+        std::cerr << "Sandbox failed to run the code." << std::endl;
     }
 
     // 清理临时目录
     cleanupWorkDir(workDir);
 
     return result.success ? result.exitCode : 1;
-}
-
-// 显示帮助信息
-void showHelp() {
-    std::cout << "IDE 命令:" << std::endl;
-    std::cout << "  run [代码路径] [输入文件路径] - 运行代码（可选输入文件）" << std::endl;
-    std::cout << std::endl;
-    std::cout << "支持的语言:" << std::endl;
-    std::cout << "  C/C++ (.cpp, .cc, .cxx, .c)" << std::endl;
-    std::cout << "  Python (.py)" << std::endl;
-    std::cout << "  Java (.java)" << std::endl;
-    std::cout << "  JavaScript (.js)" << std::endl;
-    std::cout << "  自定义语言 (config.json judge.custom_languages 按扩展名注册)" << std::endl;
 }
 
 } // namespace ide

@@ -59,7 +59,14 @@
 #include "sandbox_runner.hpp"
 #include "settings.h"
 #include "lang.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 #include "miniz/miniz.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 namespace clijudge {
 namespace judge {
@@ -522,6 +529,7 @@ inline CompileResult compileCustomLanguage(const settings::CustomLanguage& lang,
         auto argv = expand(lang.run);
         if (argv.empty()) {
             result.error = "Custom language '" + lang.name + "' has empty run command";
+            std::cerr << result.error << std::endl;
             return result;
         }
         result.exePath = argv.front();
@@ -534,6 +542,7 @@ inline CompileResult compileCustomLanguage(const settings::CustomLanguage& lang,
     auto cArgv = expand(lang.compile);
     if (cArgv.empty()) {
         result.error = "Custom language '" + lang.name + "' has empty compile command";
+        std::cerr << result.error << std::endl;
         return result;
     }
     std::string compiler = cArgv.front();
@@ -601,6 +610,7 @@ inline CompileResult compileCustomLanguage(const settings::CustomLanguage& lang,
     auto rArgv = expand(runTpl);
     if (rArgv.empty()) {
         result.error = "Custom language '" + lang.name + "' has empty run command";
+        std::cerr << result.error << std::endl;
         return result;
     }
     if (usesExe && !fs::exists(exePath)) {

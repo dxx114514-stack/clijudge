@@ -91,9 +91,8 @@ private:
     void saveIndex() {
         ensureDataDir();
         std::string indexPath = dataDir + "/contests/contests.json";
-        std::ofstream f(indexPath);
-        if (f.is_open()) {
-            f << data.dump(2);
+        if (!platform::writeFileAtomic(indexPath, data.dump(2))) {
+            std::cerr << "Warning: failed to write " << indexPath << std::endl;
         }
     }
 
@@ -288,8 +287,18 @@ public:
     int importCdf(const std::string& cdfPath, const std::string& dataDir) {
         auto cdf = clijudge::cdf::parseCdf(cdfPath);
         if (cdf.tasks.empty()) {
-            std::cerr << "CDF 文件中没有题目。" << std::endl;
+            std::cerr << "No problems in CDF file." << std::endl;
             return -1;
+        }
+        // CDF 可能携带 SPJ/交互器/grader 源码（评测期以完全信任执行），导入前提示
+        for (const auto& task : cdf.tasks) {
+            if (!task.specialJudge.empty() || !task.interactor.empty() || !task.grader.empty()
+                || !task.graderFilesPath.empty()) {
+                std::cerr << "Warning: this CDF contains special judge/interactor/generator/grader code, "
+                          << "which is executed in a trusted (reduced-isolation) mode during judging. "
+                          << "Only import contests from sources you trust." << std::endl;
+                break;
+            }
         }
 
         // 获取 CDF 数据目录（cdf 文件所在目录下的 data/ 子目录）
@@ -431,20 +440,20 @@ public:
             int problemId = problemStore.importProblem(problemJson);
             if (problemId > 0) {
                 problemIds.push_back(problemId);
-                std::cout << "  导入题目: " << task.problemTitle << " (ID: " << problemId << ")" << std::endl;
+                std::cout << "  Imported problem: " << task.problemTitle << " (ID: " << problemId << ")" << std::endl;
             } else {
-                std::cerr << "  导入题目失败: " << task.problemTitle << std::endl;
+                std::cerr << "  Failed to import problem: " << task.problemTitle << std::endl;
             }
         }
 
         // 创建比赛
         if (problemIds.empty()) {
-            std::cerr << "没有成功导入任何题目。" << std::endl;
+            std::cerr << "No problems imported successfully." << std::endl;
             return -1;
         }
 
         int contestId = create(cdf.contestTitle, "", "", problemIds);
-        std::cout << "比赛已导入: " << cdf.contestTitle << " (ID: " << contestId << ")" << std::endl;
+        std::cout << "Contest imported: " << cdf.contestTitle << " (ID: " << contestId << ")" << std::endl;
         return contestId;
     }
 
@@ -461,7 +470,7 @@ public:
         std::error_code dirEc;
         fs::create_directories(dataPath, dirEc);
         if (dirEc) {
-            std::cerr << "无法创建数据目录: " << dataPath.string() << " (" << dirEc.message() << ")" << std::endl;
+            std::cerr << "Failed to create data directory: " << dataPath.string() << " (" << dirEc.message() << ")" << std::endl;
             return nullptr;
         }
 
@@ -979,18 +988,18 @@ inline int cmdReport(const std::string& dataDir, int contestId, const std::strin
     std::string path = outPath.empty() ? ("contest_" + std::to_string(contestId) + "_report.html") : outPath;
     std::ofstream f(path, std::ios::binary);
     if (!f.is_open()) {
-        std::cerr << "无法创建文件: " << path << std::endl;
+        std::cerr << "Failed to create file: " << path << std::endl;
         return 1;
     }
     f << html;
     f.close();
-    std::cout << "比赛报告已生成: " << path << std::endl;
+    std::cout << "Contest report generated: " << path << std::endl;
     return 0;
 }
 
 inline int cmdImportCdf(const std::string& dataDir, const std::string& cdfPath) {
     if (!fs::exists(cdfPath)) {
-        std::cerr << "CDF 文件不存在: " << cdfPath << std::endl;
+        std::cerr << "CDF file not found: " << cdfPath << std::endl;
         return 1;
     }
     ContestStore store(dataDir);
@@ -1011,12 +1020,12 @@ inline int cmdExportCdf(const std::string& dataDir, int contestId, const std::st
 
     std::ofstream f(cdfPath);
     if (!f.is_open()) {
-        std::cerr << "无法创建文件: " << cdfPath << std::endl;
+        std::cerr << "Failed to create file: " << cdfPath << std::endl;
         return 1;
     }
     f << cdf.dump(-1);  // 紧凑格式
     f.close();
-    std::cout << "比赛已导出到: " << cdfPath << std::endl;
+    std::cout << "Contest exported to: " << cdfPath << std::endl;
     return 0;
 }
 

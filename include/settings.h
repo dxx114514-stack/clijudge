@@ -30,6 +30,7 @@
 #include <map>
 #include <fstream>
 #include <sstream>
+#include <iostream>
 #include <filesystem>
 #include <algorithm>
 #include <cstdlib>
@@ -219,7 +220,7 @@ inline json toJson(const JudgeSettings& s) {
     return j;
 }
 
-// 读取整个 config.json（容忍不存在/损坏）
+// 读取整个 config.json（容忍不存在；损坏/非对象时回退默认并告警，避免静默忽略用户配置）
 inline json loadRawConfig() {
     std::ifstream f(configPath());
     if (!f.is_open()) return json::object();
@@ -227,7 +228,10 @@ inline json loadRawConfig() {
         json j;
         f >> j;
         if (j.is_object()) return j;
-    } catch (...) {}
+        std::cerr << "Warning: " << configPath() << " is not a JSON object; using defaults." << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: failed to parse " << configPath() << " (" << e.what() << "); using defaults." << std::endl;
+    }
     return json::object();
 }
 
@@ -244,10 +248,7 @@ inline bool save(const JudgeSettings& s) {
     raw["judge"] = toJson(s);
     try {
         fs::create_directories(fs::path(configPath()).parent_path());
-        std::ofstream f(configPath());
-        if (!f.is_open()) return false;
-        f << raw.dump(2);
-        return f.good();
+        return platform::writeFileAtomic(configPath(), raw.dump(2));
     } catch (...) {
         return false;
     }

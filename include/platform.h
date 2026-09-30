@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <chrono>
+#include <fstream>
 
 #ifdef _WIN32
 #ifndef WINVER
@@ -24,6 +25,8 @@
 #include <windows.h>
 #else
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/file.h>
 #endif
 
 namespace clijudge {
@@ -166,6 +169,94 @@ inline const char* staticLinkFlag() {
     return "";
 #endif
 }
+
+// 原子写文件：先写同目录临时文件，再 rename 覆盖。
+// 防止进程崩溃 / 并发读取时看到半截（截断）文件——索引类 JSON 的关键写路径。
+inline bool writeFileAtomic(const std::string& path, const std::string& content) {
+    std::string tmp = path + ".tmp." + std::to_string(pid());
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        if (!f.is_open()) return false;
+        f.write(content.data(), (std::streamsize)content.size());
+        f.flush();
+        if (!f.good()) {
+            f.close();
+            std::error_code ec;
+            fs::remove(tmp, ec);
+            return false;
+        }
+    }
+    std::error_code ec;
+    fs::rename(tmp, path, ec);  // 语义：替换已存在的目标（POSIX rename / MOVEFILE_REPLACE_EXISTING）
+    if (ec) {
+        std::error_code ec2;
+        fs::remove(tmp, ec2);
+        return false;
+    }
+    return true;
+}
+
+// ── 跨进程数据锁（修改类命令持有） ─────────────────────────
+// 整个数据目录一把排他文件锁：修改类命令开始时获取，进程结束时由 OS 释放
+// （句柄/fd 关闭即解锁，崩溃不会留下陈旧锁）。读命令不加锁——索引写入是
+// 原子替换（writeFileAtomic），任何读取者看到的都是完整快照。
+class DataLock {
+public:
+    DataLock() = default;
+    ~DataLock() { unlock(); }
+    DataLock(const DataLock&) = delete;
+    DataLock& operator=(const DataLock&) = delete;
+
+    // 阻塞获取：另一 clijudge 修改进程持锁时等待，对方崩溃/退出则立即获得
+    bool lock(const std::string& path) {
+        if (locked_) return true;
+#ifdef _WIN32
+        HANDLE h = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                               OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h == INVALID_HANDLE_VALUE) return false;
+        OVERLAPPED ov = {};
+        if (!LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &ov)) {
+            CloseHandle(h);
+            return false;
+        }
+        handle_ = h;
+#else
+        int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0644);
+        if (fd < 0) return false;
+        if (flock(fd, LOCK_EX) != 0) {
+            ::close(fd);
+            return false;
+        }
+        fd_ = fd;
+#endif
+        locked_ = true;
+        return true;
+    }
+
+    void unlock() {
+        if (!locked_) return;
+#ifdef _WIN32
+        OVERLAPPED ov = {};
+        UnlockFileEx(handle_, 0, MAXDWORD, MAXDWORD, &ov);
+        CloseHandle(handle_);
+        handle_ = INVALID_HANDLE_VALUE;
+#else
+        ::flock(fd_, LOCK_UN);
+        ::close(fd_);
+        fd_ = -1;
+#endif
+        locked_ = false;
+    }
+
+private:
+    bool locked_ = false;
+#ifdef _WIN32
+    HANDLE handle_ = INVALID_HANDLE_VALUE;
+#else
+    int fd_ = -1;
+#endif
+};
 
 } // namespace platform
 } // namespace clijudge

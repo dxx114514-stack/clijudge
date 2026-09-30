@@ -37,7 +37,14 @@
 #include "sandbox_runner.hpp"
 #include "submit.h"
 #include "judge.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 #include "miniz/miniz.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 namespace clijudge {
 namespace problem {
@@ -139,9 +146,8 @@ private:
     void saveIndex() {
         ensureDataDir();
         std::string indexPath = dataDir + "/problems/problems.json";
-        std::ofstream f(indexPath);
-        if (f.is_open()) {
-            f << data.dump(2);
+        if (!platform::writeFileAtomic(indexPath, data.dump(2))) {
+            std::cerr << "Warning: failed to write " << indexPath << std::endl;
         }
     }
 
@@ -1299,6 +1305,21 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
     }
 }
 
+// 导入的题目包若携带评测期会执行的组件（SPJ/交互器/生成器/grader），打印信任警告
+inline void warnExecutableComponents(const json& problemData) {
+    const json& p = problemData.contains("problem") ? problemData.at("problem") : problemData;
+    bool has = false;
+    for (const char* k : {"spj_code", "special_judge_exe", "interactor_code", "generator_code", "generator_exe"}) {
+        if (p.contains(k) && p[k].is_string() && !p[k].get<std::string>().empty()) { has = true; break; }
+    }
+    if (!has && p.contains("grader_files") && p["grader_files"].is_object() && !p["grader_files"].empty()) has = true;
+    if (has) {
+        std::cerr << "Warning: this package contains special judge/interactor/generator/grader code, "
+                  << "which is executed in a trusted (reduced-isolation) mode during judging. "
+                  << "Only import packages from sources you trust." << std::endl;
+    }
+}
+
 inline int cmdImport(const std::string& dataDir, const std::string& importPath) {
     if (!fs::exists(importPath)) {
         std::cerr << "Import file not found: " << importPath << std::endl;
@@ -1328,6 +1349,7 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
             std::cerr << "Failed to parse problem.json in zip: " << e.what() << std::endl;
             return 1;
         }
+        warnExecutableComponents(problemData);
 
         // 解析 input_file/output_file 引用
         if (problemData.contains("test_cases")) {
@@ -1386,6 +1408,7 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         std::cerr << "Failed to parse import file: " << e.what() << std::endl;
         return 1;
     }
+    if (problemData.is_object()) warnExecutableComponents(problemData);
 
     // 支持 NoldOJ 兼容格式（带 version 字段）
     if (problemData.contains("version") && problemData.contains("problem")) {

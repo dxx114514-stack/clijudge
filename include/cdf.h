@@ -178,7 +178,7 @@ inline CdfContest parseCdf(const std::string& cdfPath) {
     CdfContest contest;
     std::ifstream f(cdfPath);
     if (!f.is_open()) {
-        std::cerr << "无法打开 CDF 文件: " << cdfPath << std::endl;
+        std::cerr << "Failed to open CDF file: " << cdfPath << std::endl;
         return contest;
     }
 
@@ -186,7 +186,7 @@ inline CdfContest parseCdf(const std::string& cdfPath) {
     try {
         f >> data;
     } catch (const json::parse_error& e) {
-        std::cerr << "解析 CDF 文件失败: " << e.what() << std::endl;
+        std::cerr << "Failed to parse CDF file: " << e.what() << std::endl;
         return contest;
     }
 

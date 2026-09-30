@@ -56,7 +56,14 @@
 #include <filesystem>
 #include "json.hpp"
 #include "platform.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 #include "miniz_impl.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #include "article.h"
 #include "contest.h"
 #include "ide.h"
@@ -160,6 +167,28 @@ int parseInt(const char* str, int defaultValue = 0) {
     }
 }
 
+// 判断是否为修改类命令（需要持有跨进程数据锁）。
+// 读命令不加锁：索引/配置均为原子替换写入，读到的总是完整快照。
+bool isMutationCommand(const std::string& command, int argc, char* argv[]) {
+    if (argc < 3) return false;
+    std::string sub = argv[2];
+    if (command == "problem") {
+        // testdata 含 list（只读），粗粒度归为修改类，代价仅为串行化
+        return sub == "create" || sub == "edit" || sub == "delete"
+            || sub == "submit" || sub == "import" || sub == "testdata";
+    }
+    if (command == "contest") {
+        if (sub == "create" || sub == "delete" || sub == "import") return true;
+        // contest problem <cid> <idx> submit ... （view 为只读）
+        if (sub == "problem" && argc >= 6 && std::string(argv[5]) == "submit") return true;
+        return false;
+    }
+    if (command == "submit") return sub == "rejudge";
+    if (command == "article") return sub == "create" || sub == "delete";
+    if (command == "displaylang") return sub == "switch" || sub == "delete" || sub == "pull";
+    return false;
+}
+
 // 主函数
 int main(int argc, char* argv[]) {
     // 检查参数数量
@@ -185,6 +214,14 @@ int main(int argc, char* argv[]) {
             clijudge::lang::showNoLangError();
             return 1;
         }
+    }
+
+    // 修改类命令获取全局数据锁（跨进程互斥，进程退出由 OS 自动释放）
+    static clijudge::platform::DataLock dataLock;
+    if (isMutationCommand(command, argc, argv)
+        && !dataLock.lock(clijudge::platform::pathJoin(dataDir, ".clijudge.lock"))) {
+        std::cerr << "Error: failed to acquire data lock at " << dataDir << std::endl;
+        return 1;
     }
 
     // 帮助命令
@@ -328,14 +365,14 @@ int main(int argc, char* argv[]) {
             return clijudge::contest::cmdReport(dataDir, id, outPath);
         } else if (subCmd == "import") {
             if (argc < 4) {
-                std::cerr << "用法: clijudge.exe contest import [cdf文件路径]" << std::endl;
+                std::cerr << "Usage: clijudge.exe contest import [cdf_path]" << std::endl;
                 return 1;
             }
             std::string cdfPath = argv[3];
             return clijudge::contest::cmdImportCdf(dataDir, cdfPath);
         } else if (subCmd == "export") {
             if (argc < 5) {
-                std::cerr << "用法: clijudge.exe contest export [编号] [cdf文件路径]" << std::endl;
+                std::cerr << "Usage: clijudge.exe contest export [id] [cdf_path]" << std::endl;
                 return 1;
             }
             int id = parseInt(argv[3]);

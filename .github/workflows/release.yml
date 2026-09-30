@@ -20,7 +20,13 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          g++ -std=c++17 -O2 -static -I include -o clijudge.exe src/main.cpp -lpsapi -luserenv -lole32 -lwinhttp
+          g++ -std=c++17 -O2 -Wall -static -I include -o clijudge.exe src/main.cpp -lpsapi -luserenv -lole32 -lwinhttp
+      
+      - name: Smoke test
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\smoke_windows.ps1
+          exit $LASTEXITCODE
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -39,12 +45,10 @@ jobs:
       
       - name: Build
         run: |
-          g++ -std=c++17 -O2 -I include -o clijudge src/main.cpp
+          g++ -std=c++17 -O2 -Wall -I include -o clijudge src/main.cpp
       
       - name: Smoke test
-        run: |
-          ./clijudge help
-          ./clijudge displaylang list
+        run: bash tests/smoke_linux.sh
       
       - name: Rename for release
         run: mv clijudge clijudge-linux.bin

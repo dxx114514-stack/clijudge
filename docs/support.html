@@ -219,14 +219,14 @@ cmake --build .</code></pre>
         <p style="margin-top: 12px;">或使用 g++ 直接编译：</p>
         <div class="code-block" style="margin-top: 12px;">
           <div class="bar"><i></i><i></i><i></i></div>
-          <pre><code>g++ -std=c++17 -O2 -static -I include \
+          <pre><code>g++ -std=c++17 -O2 -Wall -static -I include \
   -o clijudge.exe src/main.cpp \
   -lpsapi -luserenv -lole32 -lwinhttp</code></pre>
         </div>
       </div>
       <div class="card">
         <h3>数据存储在哪里？</h3>
-        <p>默认存储在可执行文件同级目录的 <code>data/</code> 文件夹下。可通过环境变量 <code>CLIJUDGE_DATA_DIR</code> 自定义存储位置。题目、文章、比赛、提交分别位于 <code>data/problems</code>、<code>data/articles</code>、<code>data/contests</code>、<code>data/submissions</code> 子目录，旧版平铺数据会在启动时自动迁移。</p>
+        <p>默认存储在可执行文件同级目录的 <code>data/</code> 文件夹下。可通过环境变量 <code>CLIJUDGE_DATA_DIR</code> 自定义存储位置。题目、文章、比赛、提交分别位于 <code>data/problems</code>、<code>data/articles</code>、<code>data/contests</code>、<code>data/submissions</code> 子目录，旧版平铺数据会在启动时自动迁移。索引写入采用临时文件 + 原子替换，并发修改由 <code>data/.clijudge.lock</code> 跨进程锁保护（进程崩溃后锁自动释放）。</p>
         <p style="margin-top: 12px;">数据以 JSON 格式存储，方便备份和迁移。</p>
       </div>
       <div class="card">
@@ -264,7 +264,7 @@ clijudge.exe problem import problem_1.json</code></pre>
         <ol class="steps">
           <li>
             <strong>找不到 json.hpp</strong>
-            确保 <code>json.hpp</code> 文件在 <code>include/</code> 目录或项目根目录。
+            确保 <code>json.hpp</code> 文件在 <code>include/</code> 目录。
           </li>
           <li>
             <strong>找不到 Windows API 函数</strong>

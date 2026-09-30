@@ -74,9 +74,8 @@ private:
     void saveIndex() {
         ensureDataDir();
         std::string indexPath = dataDir + "/articles/articles.json";
-        std::ofstream f(indexPath);
-        if (f.is_open()) {
-            f << data.dump(2);
+        if (!platform::writeFileAtomic(indexPath, data.dump(2))) {
+            std::cerr << "Warning: failed to write " << indexPath << std::endl;
         }
     }
 
@@ -208,17 +207,17 @@ inline int cmdCount(const std::string& dataDir) {
 inline int cmdCreate(const std::string& dataDir, const std::string& title, const std::string& mdPath = "") {
     ArticleStore store(dataDir);
     int id = store.create(title, mdPath);
-    std::cout << "文章已创建，编号: " << id << std::endl;
+    std::cout << "Article created, ID: " << id << std::endl;
     return 0;
 }
 
 inline int cmdDelete(const std::string& dataDir, int id) {
     ArticleStore store(dataDir);
     if (store.deleteArticle(id)) {
-        std::cout << "文章 " << id << " 已删除。" << std::endl;
+        std::cout << "Article " << id << " deleted." << std::endl;
         return 0;
     } else {
-        std::cerr << "文章 " << id << " 未找到。" << std::endl;
+        std::cerr << "Article " << id << " not found." << std::endl;
         return 1;
     }
 }
@@ -234,7 +233,7 @@ inline int cmdView(const std::string& dataDir, int id) {
     ArticleStore store(dataDir);
     json article = store.view(id);
     if (article.is_null()) {
-        std::cerr << "文章 " << id << " 未找到。" << std::endl;
+        std::cerr << "Article " << id << " not found." << std::endl;
         return 1;
     }
     std::cout << article.dump(2) << std::endl;

@@ -385,7 +385,7 @@
     <div class="sec-head reveal">
       <span class="tag">Security</span>
       <h2>纵深防御的安全沙箱</h2>
-      <p>基于 Windows 原生 Job Objects 构建的多层隔离，让不可信代码在受控环境中运行。</p>
+      <p>基于 Windows 原生 Job Objects 与 Linux namespaces/cgroups 构建的多层隔离，让不可信代码在受控环境中运行。</p>
     </div>
     <div class="spotlight reveal">
       <div class="grid g3">
@@ -403,7 +403,7 @@
         </div>
         <div class="sec-item">
           <div class="n">04</div>
-          <div><h4>权限降级</h4><p>受限令牌剥离 SeDebug / SeImpersonate 等高危特权。</p></div>
+          <div><h4>权限降级</h4><p>受限令牌剥离 SeDebug / SeImpersonate 等高危特权，Low IL 运行。</p></div>
         </div>
         <div class="sec-item">
           <div class="n">05</div>
@@ -412,6 +412,14 @@
         <div class="sec-item">
           <div class="n">06</div>
           <div><h4>数据隔离</h4><p>每次判题独立临时目录，结束后暴力删除。</p></div>
+        </div>
+        <div class="sec-item">
+          <div class="n">07</div>
+          <div><h4>Linux 隔离</h4><p>namespaces（user/mnt/pid/net/ipc/uts）+ seccomp + 只读挂载 + RLIMIT 资源限制，能力与 Windows 侧对齐。</p></div>
+        </div>
+        <div class="sec-item">
+          <div class="n">08</div>
+          <div><h4>信任边界</h4><p>题目代码经完整沙箱隔离执行；SPJ/生成器/grader 以可信（放宽隔离）模式运行并保留时限，导入携带此类代码的题目包时显式告警。</p></div>
         </div>
       </div>
     </div>

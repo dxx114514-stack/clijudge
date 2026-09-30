@@ -80,13 +80,13 @@ cmake --build .
 Windows:
 
 ```bash
-g++ -std=c++17 -O2 -static -I include -o clijudge.exe src/main.cpp -lpsapi -luserenv -lole32 -lwinhttp
+g++ -std=c++17 -O2 -Wall -static -I include -o clijudge.exe src/main.cpp -lpsapi -luserenv -lole32 -lwinhttp
 ```
 
 Linux:
 
 ```bash
-g++ -std=c++17 -O2 -I include -o clijudge src/main.cpp
+g++ -std=c++17 -O2 -Wall -I include -o clijudge src/main.cpp
 ```
 
 Linux 下语言包联网下载依赖 `curl`（`displaylang` 命令）。

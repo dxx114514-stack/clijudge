@@ -73,9 +73,8 @@ private:
     void saveIndex() {
         ensureDataDir();
         std::string indexPath = dataDir + "/submissions/submissions.json";
-        std::ofstream f(indexPath);
-        if (f.is_open()) {
-            f << data.dump(2);
+        if (!platform::writeFileAtomic(indexPath, data.dump(2))) {
+            std::cerr << "Warning: failed to write " << indexPath << std::endl;
         }
     }
 

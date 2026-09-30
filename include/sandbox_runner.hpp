@@ -18,6 +18,37 @@
 //
 // 编译: g++ -O2 -static -o clijudge src/main.cpp -lpsapi -luserenv (仅 Windows 需链接库)
 // 用法: 通过 main.cpp 调用 sandbox_run() 函数
+//
+// 结构说明: Windows / Linux 实现以 #ifdef 分支并列（spawn、隔离、轮询等
+// 平台强相关逻辑各自实现）；仅平台无关部分（元数据写入）提取为公共段。
+
+#include <string>
+#include <cstdio>
+
+namespace clijudge {
+
+// 平台各自实现：保证 meta 路径可用（恶意预置同名目录时删除占位）
+inline void ensureMetaPath(const char* path);
+
+// 写入评测元数据 JSON（公共实现，双平台共用）
+// signal 字段做 JSON 转义，防止引号/反斜杠破坏元数据
+inline void writeMeta(const char* path, int exitCode, unsigned long timeMs,
+                      unsigned long long memKB, const char* signal) {
+    ensureMetaPath(path);
+    FILE* f = fopen(path, "w");
+    if (!f) return;
+    std::string sig(signal ? signal : "");
+    std::string esc;
+    for (char c : sig) {
+        if (c == '"' || c == '\\') esc += '\\';
+        esc += c;
+    }
+    fprintf(f, "{\"exit_code\":%d,\"time_used\":%lu,\"memory_used\":%llu,\"signal\":\"%s\"}",
+            exitCode, timeMs, memKB, esc.c_str());
+    fclose(f);
+}
+
+} // namespace clijudge
 
 #ifdef _WIN32
 
@@ -44,8 +75,10 @@
 #include <algorithm>
 #include <cctype>
 
+#ifdef _MSC_VER
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "userenv.lib")
+#endif
 
 namespace clijudge {
 
@@ -284,22 +317,6 @@ inline void ensureMetaPath(const char* path) {
         deleteTreeW(wp.c_str());
 }
 
-inline void writeMeta(const char* path, int exitCode, DWORD timeMs, SIZE_T memKB, const char* signal) {
-    ensureMetaPath(path);
-    FILE* f = fopen(path, "w");
-    if (!f) return;
-    // JSON 字符串转义：防止 signal 含双引号/反斜杠导致元数据被破坏
-    std::string sig(signal ? signal : "");
-    std::string esc;
-    for (char c : sig) {
-        if (c == '"' || c == '\\') esc += '\\';
-        esc += c;
-    }
-    fprintf(f, "{\"exit_code\":%d,\"time_used\":%lu,\"memory_used\":%llu,\"signal\":\"%s\"}",
-            exitCode, (unsigned long)timeMs, (unsigned long long)memKB, esc.c_str());
-    fclose(f);
-}
-
 // ── 递归把 root 下所有文件/目录的强制完整性标签设为 LOW ──────
 // 用于受限令牌 + Low-IL 路径：子进程以 Low IL 运行，若 workDir 仍是 Medium
 // 标签，完整性强制策略（no-write-up）会拒绝其写入。
@@ -312,7 +329,6 @@ inline void setLowLabelOnPath(const wchar_t* path, DWORD inh) {
     DWORD aclSize = sizeof(ACL) + aceSize;
 
     PACL pAcl = (PACL)LocalAlloc(LPTR, aclSize);
-    bool ok = false;
     if (pAcl && InitializeAcl(pAcl, aclSize, ACL_REVISION)) {
         SYSTEM_MANDATORY_LABEL_ACE* mace = (SYSTEM_MANDATORY_LABEL_ACE*)LocalAlloc(LPTR, aceSize);
         if (mace) {
@@ -322,8 +338,8 @@ inline void setLowLabelOnPath(const wchar_t* path, DWORD inh) {
             mace->Mask = SYSTEM_MANDATORY_LABEL_NO_WRITE_UP;
             CopySid(sidLen, &mace->SidStart, lowSid);
             if (AddAce(pAcl, ACL_REVISION, MAXDWORD, mace, aceSize))
-                ok = SetNamedSecurityInfoW((LPWSTR)path, SE_FILE_OBJECT,
-                                           LABEL_SECURITY_INFORMATION, NULL, NULL, NULL, pAcl) == ERROR_SUCCESS;
+                SetNamedSecurityInfoW((LPWSTR)path, SE_FILE_OBJECT,
+                                      LABEL_SECURITY_INFORMATION, NULL, NULL, NULL, pAcl);
             LocalFree(mace);
         }
     }
@@ -547,7 +563,9 @@ inline SandboxResult sandbox_run(
     // 低完整性级别设置
     bool lowIl = true;
     {
-        const char* env = getenv("WINOJ_NO_LOWIL");
+        // 项目由 WinOJ 更名 CliJudge：新旧环境变量名均支持
+        const char* env = getenv("CLIJUDGE_NO_LOWIL");
+        if (!env) env = getenv("WINOJ_NO_LOWIL");
         if (env && env[0] == '1') lowIl = false;
     }
     if (lowIl && hRestricted) {
@@ -590,7 +608,8 @@ inline SandboxResult sandbox_run(
     // 3b. Low-IL 路径把 workDir 完整性标签递归降为 LOW
     bool noRelabel = false;
     {
-        const char* env = getenv("WINOJ_NO_RELABEL");
+        const char* env = getenv("CLIJUDGE_NO_RELABEL");
+        if (!env) env = getenv("WINOJ_NO_RELABEL");
         if (env && env[0] == '1') noRelabel = true;
     }
     if (lowIl && !noRelabel) {
@@ -781,26 +800,11 @@ inline std::string resolveInPath(const std::string& exe) {
 
 extern "C" char** environ;
 
-// ── 写元数据 JSON 到文件（格式与 Windows 分支完全一致）──────
+// ── 确保 meta 路径可用（平台分支实现，公共 writeMeta 调用）────
 inline void ensureMetaPath(const char* path) {
     std::error_code ec;
     if (std::filesystem::is_directory(path, ec))
         std::filesystem::remove_all(path, ec);
-}
-
-inline void writeMeta(const char* path, int exitCode, unsigned int timeMs, size_t memKB, const char* signal) {
-    ensureMetaPath(path);
-    FILE* f = fopen(path, "w");
-    if (!f) return;
-    std::string sig(signal ? signal : "");
-    std::string esc;
-    for (char c : sig) {
-        if (c == '"' || c == '\\') esc += '\\';
-        esc += c;
-    }
-    fprintf(f, "{\"exit_code\":%d,\"time_used\":%lu,\"memory_used\":%llu,\"signal\":\"%s\"}",
-            exitCode, (unsigned long)timeMs, (unsigned long long)memKB, esc.c_str());
-    fclose(f);
 }
 
 // ── 读取 /proc/<pid>/status 的 VmHWM（峰值 RSS, kB）─────────

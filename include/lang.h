@@ -23,7 +23,9 @@
 #include <cstring>
 #ifdef _WIN32
 #include <winhttp.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "winhttp.lib")
+#endif
 #endif
 #include "json.hpp"
 #include "platform.h"
@@ -294,13 +296,19 @@ inline json loadConfig() {
     try {
         return json::parse(content);
     } catch (...) {
+        // 损坏的 config.json 静默回退会让用户困惑，明确告警一次
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            std::cerr << "Warning: failed to parse " << path << " (invalid JSON); using defaults." << std::endl;
+        }
         return json{{"current_lang", ""}};
     }
 }
 
-// 保存配置
+// 保存配置（原子写，防崩溃留下半截 config.json）
 inline bool saveConfig(const json& config) {
-    return writeFile(getConfigPath(), config.dump(2));
+    return platform::writeFileAtomic(getConfigPath(), config.dump(2));
 }
 
 // 首次运行（配置文件不存在）自动启用内置英文语言包，保证离线可用

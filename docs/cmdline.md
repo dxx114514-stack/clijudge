@@ -277,6 +277,8 @@ Imported 3 test case(s).
 
 接受 `.zip`（读取 `problem.json` 并解析 testdata 引用）或 `.json`（含 `problem` + `test_cases`，兼容 NoldOJ `version` 格式与 CliJudge 原生格式）。导入时重新分配编号。
 
+**安全提示：** 题目包可能携带 Special Judge / 交互器 / 生成器 / grader 源码，这些代码在评测期间以**可信（放宽隔离）模式**执行——保留时间/内存/进程限制，但跳过受限令牌、命名空间与 seccomp 等隔离层，并可写工作目录。检测到此类组件时会输出 `Warning: ... Only import packages from sources you trust.`；请只导入可信来源的题目包。
+
 **输出：** `Problem imported with ID: 5`
 
 ---
@@ -360,22 +362,24 @@ Submission accepted for contest 1 problem 2
 
 生成含排名、题目、提交明细（含 `judge_detail`）的 HTML。输出路径缺省为 `contest_<编号>_report.html`。
 
-**输出：** `比赛报告已生成: contest_1_report.html`
+**输出：** `Contest report generated: contest_1_report.html`
 
 ### clijudge contest import [cdf路径] — 导入 CDF 比赛
 
 CDF 为兼容 LemonLime 的比赛数据 JSON（题目、测试数据、提交、排行）。逐题导入本地题目库后创建比赛。
 
+**安全提示：** CDF 可能携带 Special Judge / 交互器 / grader 源码（评测期以可信/放宽隔离模式执行），检测到时会输出 `Warning: ... Only import contests from sources you trust.`；请只导入可信来源的 CDF。
+
 **输出：**
 
 ```
-  导入题目: A + B Problem (ID: 1)
-比赛已导入: 寒假集训 (ID: 1)
+  Imported problem: A + B Problem (ID: 1)
+Contest imported: 寒假集训 (ID: 1)
 ```
 
 ### clijudge contest export [比赛编号] [cdf路径] — 导出 CDF 比赛
 
-**输出：** `比赛已导出到: contest.cdf`（紧凑 JSON）
+**输出：** `Contest exported to: contest.cdf`（紧凑 JSON）
 
 ---
 
@@ -389,11 +393,11 @@ CDF 为兼容 LemonLime 的比赛数据 JSON（题目、测试数据、提交、
 
 md 文件可省略（之后可另行编辑）。
 
-**输出：** `文章已创建，编号: 1`
+**输出：** `Article created, ID: 1`
 
 ### clijudge article delete [编号] — 删除文章
 
-**输出：** `文章 1 已删除。` / `文章 1 未找到。`（退出码 1）
+**输出：** `Article 1 deleted.` / `Article 1 not found.`（退出码 1）
 
 ### clijudge article list [L=1] [R=50] — 列出文章
 
@@ -409,7 +413,7 @@ md 文件可省略（之后可另行编辑）。
 
 ### clijudge ide run [代码路径] [输入文件路径] — 运行代码
 
-在沙箱中编译并运行（超时 10s、内存 256MB、进程上限 32），程序输出直接打印到终端；提供输入文件时重定向其内容到 stdin。临时工作目录运行后自动清理。
+在沙箱中编译并运行。编译复用评测链路（可信沙箱、编译时限配置、错误输出捕获后打印）；随后以**单进程**在受限沙箱中运行（超时 10s、内存 256MB、进程上限 1，不经 shell，结构化 argv 直接执行），程序输出直接打印到终端；提供输入文件时重定向其内容到 stdin。临时工作目录运行后自动清理。
 
 支持语言：C/C++（`.cpp` `.cc` `.cxx` `.c`）、Python（`.py`）、Java（`.java`）、JavaScript（`.js`）；其它扩展名尝试直接执行。
 
@@ -420,12 +424,12 @@ clijudge ide run main.cpp in.txt
 **输出：**
 
 ```
-退出码: 0
-用时: 15 毫秒
-内存: 3200 KB
+Exit code: 0
+Time: 15 ms
+Memory: 3200 KB
 ```
 
-被信号终止时追加一行 `信号: SIGKILL`。
+被信号终止时追加一行 `Signal: SIGKILL`。
 
 **退出码：** 程序自身退出码；沙箱启动失败为 `1`。
 
