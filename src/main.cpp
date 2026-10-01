@@ -112,6 +112,7 @@ void showCommandHelp(const std::string& command) {
         std::cout << "  export [id] [cdf_path]         " << clijudge::lang::tr("contest.export", "Export contest to CDF") << std::endl;
         std::cout << "  import [cdf_path]              " << clijudge::lang::tr("contest.import", "Import contest from CDF") << std::endl;
         std::cout << "  leaderboard [id]               " << clijudge::lang::tr("contest.leaderboard", "View contest leaderboard") << std::endl;
+        std::cout << "  list                           " << clijudge::lang::tr("contest.list", "List contests") << std::endl;
         std::cout << "  report [id] [out_html]         " << clijudge::lang::tr("contest.report", "Export contest report (HTML)") << std::endl;
         std::cout << "  problem [id] [prob_index]      " << clijudge::lang::tr("contest.problem", "Contest problem") << std::endl;
         std::cout << "    submit [file] [--as user]    " << clijudge::lang::tr("contest.submit", "Submit solution") << std::endl;
@@ -127,7 +128,7 @@ void showCommandHelp(const std::string& command) {
         std::cout << "    options: -type -compare -spj-code -spj-exe -float-abs -float-rel" << std::endl;
         std::cout << "             -subtask-mode -answer-ext -source-name -dependence" << std::endl;
         std::cout << "             -interactor -grader -background -describe -exampleio" << std::endl;
-        std::cout << "             -generator -generator-exe" << std::endl;
+        std::cout << "             -generator -generator-exe -instyle -outstyle" << std::endl;
         std::cout << "  delete [id]                    " << clijudge::lang::tr("problem.delete", "Delete problem") << std::endl;
         std::cout << "  edit [id]                      " << clijudge::lang::tr("problem.edit", "Edit problem (same options as create)") << std::endl;
         std::cout << "  export [zip_path]              " << clijudge::lang::tr("problem.export", "Export problem") << std::endl;

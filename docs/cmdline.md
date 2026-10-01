@@ -11,7 +11,7 @@ clijudge help                    # 总帮助
 clijudge <命令> help             # 分模块帮助（article/contest/ide/problem/submit/displaylang）
 ```
 
-`help` 与 `displaylang` 是仅有的两个不要求已配置显示语言的命令。
+语言检查按**顶层命令**判定：仅顶层 `help` 与 `displaylang` 不要求已配置显示语言，`problem help` 等子命令帮助同样受此限制。
 
 ### 数据目录
 
@@ -93,7 +93,7 @@ data/
 - 命令可为 PATH 上的裸名（如 `python3`、`judgelang`，沙箱环境白名单保留 PATH）或绝对路径；**内置扩展名优先**，与自定义注册冲突时内置生效。
 - `custom_languages` 键**缺失**时自动内置示例语言 `judgelang`（`.jlang` / `.judgelang`，运行 `judgelang {src}`，需自行在 PATH 上提供同名解释器，否则提交判 `SE`）；显式给出该键（包括空对象 `{}`）则完全以配置为准。
 - 编译器按扩展名识别源语言的（如 g++/gcc），需自行在 `compile` 中指定语言，如 `g++ -O2 -x c++ -o {exe} {src}`。
-- `clijudge ide run` 同样支持已注册的自定义语言（编译 + 运行经 shell 复合执行）。
+- `clijudge ide run` 同样支持已注册的自定义语言（编译 + 运行均**不经 shell**，与内置语言一致按结构化 argv 直接执行）。
 
 ### 比较模式（`-compare`）
 
@@ -391,7 +391,7 @@ Contest imported: 寒假集训 (ID: 1)
 
 ### clijudge article create [标题] [md文件路径] — 创建文章
 
-md 文件可省略（之后可另行编辑）。
+md 文件可省略（正文为空）。**`article` 无 edit 子命令**，事后只能直接手改 `data/articles/article_N.json` 或删除重建。
 
 **输出：** `Article created, ID: 1`
 

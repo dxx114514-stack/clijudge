@@ -29,6 +29,7 @@
 │  ├─export [编号] [cdf路径]          # 导出 LemonLime CDF
 │  ├─import [cdf路径]                # 导入 CDF
 │  ├─leaderboard [编号]              # 比赛排名
+│  ├─list                           # 列出比赛
 │  ├─report [编号] [输出.html]        # 导出 HTML 比赛报告
 │  ├─problem [编号] [题目在比赛中的编号]
 │  │  ├─submit [文件地址] [--as 用户]
