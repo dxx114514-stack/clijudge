@@ -12,6 +12,13 @@ t() { # t <name> <0=pass> [detail]
 }
 run() { OUT=$("$BIN" "$@" 2>&1); CODE=$?; }
 
+# environment probes (diagnose CI vs local sandbox behavior)
+export CLIJUDGE_SANDBOX_DEBUG=/tmp/cj_lx_smoke/sbx.dbg
+echo "ENV: uname=$(uname -r)"
+echo "ENV: apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
+echo "ENV: max_user_namespaces=$(cat /proc/sys/user/max_user_namespaces 2>/dev/null || echo n/a)"
+if unshare -U true; then echo "ENV: unshare -U ok"; else echo "ENV: unshare -U DENIED rc=$?"; fi
+
 run help
 [ $CODE -eq 0 ] && echo "$OUT" | grep -q Usage && echo "$OUT" | grep -q displaylang; t "help exit0+usage+displaylang" $? "$OUT"
 
@@ -165,5 +172,9 @@ run problem submit "$BGID" "$W/b.bglang" --as bob
 
 echo ""
 echo "PASS: $pass  FAIL: $fail"
+if [ -s "$CLIJUDGE_SANDBOX_DEBUG" ]; then
+  echo "--- sandbox debug log ---"
+  sort -u "$CLIJUDGE_SANDBOX_DEBUG" | head -40
+fi
 rm -rf /tmp/cj_lx_smoke
 [ $fail -eq 0 ] && exit 0 || exit 1

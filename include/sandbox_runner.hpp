@@ -956,6 +956,45 @@ inline bool writeProcFile(const char* path, const char* s) {
     return ok;
 }
 
+// ── 诊断埋点: 设置 CLIJUDGE_SANDBOX_DEBUG=<file> 时记录沙箱失败点与
+//    命名空间阶梯选择 (裸 write, fork 后/多线程父进程下也安全) ────────
+inline void sbxDebugAppend(const char* s, size_t n) {
+    const char* path = getenv("CLIJUDGE_SANDBOX_DEBUG");
+    if (!path || !path[0]) return;
+    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) return;
+    while (n > 0) {
+        ssize_t w = write(fd, s, n);
+        if (w <= 0) break;
+        s += w;
+        n -= (size_t)w;
+    }
+    close(fd);
+}
+inline void sbxDebugLog(const char* site, int err, int level) {
+    char buf[224];
+    size_t i = 0;
+    auto app = [&](const char* s) { while (*s && i < sizeof(buf) - 24) buf[i++] = *s++; };
+    auto appi = [&](int x) {
+        char t[16];
+        int n = 0;
+        unsigned int u;
+        if (x < 0) { buf[i++] = '-'; u = (unsigned int)(-(long long)x); }
+        else u = (unsigned int)x;
+        if (u == 0) t[n++] = '0';
+        while (u && n < 15) { t[n++] = (char)('0' + u % 10); u /= 10; }
+        while (n) buf[i++] = t[--n];
+    };
+    app("sbx-FAIL site=");
+    app(site);
+    app(" errno=");
+    appi(err);
+    app(" level=");
+    appi(level);
+    app("\n");
+    sbxDebugAppend(buf, i);
+}
+
 // ── fork/clone 子进程初始化上下文（父进程内构建, 子进程只读）──────
 struct LinuxChildCtx {
     int level = 0;               // 2=完整命名空间 1=user+mnt 0=普通 fork
@@ -1057,25 +1096,42 @@ inline SandboxResult sandbox_run(
     };
     const int attempts = trusted ? 1 : 3;
     pid_t pid = -1;
+    int attemptErrno[3] = {0, 0, 0};
     for (int a = 0; a < attempts; a++) {
         ctx.level = trusted ? 0 : 2 - a;
         int flags = trusted ? 0 : kLevelFlags[a];
         pid = (flags == 0) ? fork()
                            : (pid_t)syscall(SYS_clone, (unsigned long)(flags | SIGCHLD), 0);
         if (pid >= 0) break;
+        if (a < 3) attemptErrno[a] = errno;
     }
     if (pid < 0) {
+        sbxDebugLog("clone-all", errno, ctx.level);
         writeMeta(metaFile, -1, 0, 0, "SYSTEM_ERROR");
         return result;
+    }
+    if (pid > 0) {
+        char info[192];
+        int n = snprintf(info, sizeof(info),
+                         "sbx-INFO level=%d trusted=%d a0=%d a1=%d a2=%d euid=%u pid=%d\n",
+                         ctx.level, trusted ? 1 : 0,
+                         attemptErrno[0], attemptErrno[1], attemptErrno[2],
+                         (unsigned)geteuid(), (int)pid);
+        if (n > 0) sbxDebugAppend(info, (size_t)n);
     }
 
     if (pid == 0) {
         // 用户命名空间映射 (level>=1): 子进程自写; 失败即中止
         if (ctx.level >= 1) {
             writeProcFile("/proc/self/setgroups", "deny");
-            if (!writeProcFile("/proc/self/uid_map", ctx.uidMap) ||
-                !writeProcFile("/proc/self/gid_map", ctx.gidMap))
+            if (!writeProcFile("/proc/self/uid_map", ctx.uidMap)) {
+                sbxDebugLog("uid_map", errno, ctx.level);
                 _exit(126);
+            }
+            if (!writeProcFile("/proc/self/gid_map", ctx.gidMap)) {
+                sbxDebugLog("gid_map", errno, ctx.level);
+                _exit(126);
+            }
         }
 
         // 独立进程组：超时/OOM 时父进程 kill(-pid) 可整组击杀
@@ -1111,15 +1167,15 @@ inline SandboxResult sandbox_run(
             int errFd = io->fdStderr;
             if (inFd < 0 && !io->stdinPath.empty()) {
                 inFd = open(io->stdinPath.c_str(), O_RDONLY);
-                if (inFd < 0) _exit(126);
+                if (inFd < 0) { sbxDebugLog("io-stdin", errno, ctx.level); _exit(126); }
             }
             if (outFd < 0 && !io->stdoutPath.empty()) {
                 outFd = open(io->stdoutPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                if (outFd < 0) _exit(126);
+                if (outFd < 0) { sbxDebugLog("io-stdout", errno, ctx.level); _exit(126); }
             }
             if (errFd < 0 && !io->stderrPath.empty()) {
                 errFd = open(io->stderrPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                if (errFd < 0) _exit(126);
+                if (errFd < 0) { sbxDebugLog("io-stderr", errno, ctx.level); _exit(126); }
             }
             if (inFd >= 0 && inFd != STDIN_FILENO) { dup2(inFd, STDIN_FILENO); if (inFd > STDERR_FILENO) close(inFd); }
             if (outFd >= 0 && outFd != STDOUT_FILENO) { dup2(outFd, STDOUT_FILENO); if (outFd > STDERR_FILENO) close(outFd); }
@@ -1142,7 +1198,10 @@ inline SandboxResult sandbox_run(
         }
 
         if (!workingDir.empty()) {
-            if (chdir(workingDir.c_str()) != 0) _exit(126);
+            if (chdir(workingDir.c_str()) != 0) {
+                sbxDebugLog("chdir", errno, ctx.level);
+                _exit(126);
+            }
         }
 
         // 能力清理: user namespace 内的 root 在 exec 前全部放弃
@@ -1173,8 +1232,10 @@ inline SandboxResult sandbox_run(
             struct sock_fprog prog;
             prog.len = (unsigned short)ctx.filter.size();
             prog.filter = ctx.filter.data();
-            if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) != 0)
+            if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) != 0) {
+                sbxDebugLog("seccomp", errno, ctx.level);
                 _exit(126); // 过滤器安装失败 → 拒绝执行 (fail-closed)
+            }
         }
 
         execve(resolved.c_str(), argv.data(), envp.data());
