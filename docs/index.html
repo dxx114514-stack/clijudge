@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CliJudge - 轻量级命令行在线评测系统</title>
-<meta name="description" content="CliJudge 是一套专为 Windows 平台设计的轻量级命令行在线评测系统（OJ）。支持多语言判题、安全沙箱、比赛管理、JSON存储，纯命令行界面，开箱即用。">
+<title>CliJudge - 轻量级命令行评测系统（Windows / Linux）</title>
+<meta name="description" content="CliJudge 是一套轻量级命令行在线评测系统（OJ），支持 Windows / Linux 双平台。多语言判题、安全沙箱、比赛管理、JSON存储，纯命令行界面，开箱即用。">
 <style>
   :root {
     --bg: #0b1020;
@@ -255,9 +255,9 @@
 
 <header id="top">
   <div class="wrap">
-    <div class="hero-badge"><span class="dot"></span>专为 Windows 平台设计的命令行评测系统</div>
+    <div class="hero-badge"><span class="dot"></span>Windows / Linux 双平台命令行评测系统</div>
     <h1>让代码评测<span class="grad">更快 · 更轻 · 更简单</span></h1>
-    <p class="hero-sub">CliJudge 是一套轻量级的 Windows 命令行在线评测系统：多语言判题、安全沙箱、比赛管理、JSON 存储……纯命令行界面，开箱即用。</p>
+    <p class="hero-sub">CliJudge 是一套轻量级命令行在线评测系统，Windows / Linux 双平台：多语言判题、安全沙箱、比赛管理、JSON 存储……纯命令行界面，开箱即用。</p>
     <div class="hero-cta">
       <a class="btn btn-primary" href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener">
         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -270,8 +270,8 @@
       <a class="btn btn-ghost" href="support.html">支持中心</a>
     </div>
     <div class="hero-stats">
-      <div class="stat"><b class="c1">5</b><span>核心模块</span></div>
-      <div class="stat"><b class="c2">3</b><span>评测语言</span></div>
+      <div class="stat"><b class="c1">6</b><span>核心模块</span></div>
+      <div class="stat"><b class="c2">5+</b><span>评测语言</span></div>
       <div class="stat"><b class="c3">JSON</b><span>数据存储</span></div>
       <div class="stat"><b class="c4">0</b><span>外部依赖</span></div>
     </div>
@@ -290,20 +290,20 @@
         <div class="ico i-indigo"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg></div>
         <h3>多语言评测</h3>
         <ul>
-          <li>C / C++ / Python 3</li>
+          <li>C / C++ / Python / Java / JavaScript</li>
+          <li>自定义语言（custom_languages）</li>
           <li>自动检测语言类型</li>
-          <li>支持 Special Judge</li>
-          <li>浮点容差比较</li>
+          <li>Special Judge 与浮点容差比较</li>
         </ul>
       </div>
       <div class="card reveal">
         <div class="ico i-cyan"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg></div>
         <h3>安全沙箱</h3>
         <ul>
-          <li>Job Object 进程隔离</li>
-          <li>受限令牌权限降级</li>
+          <li>Windows：Job Object + 受限令牌</li>
+          <li>Linux：namespaces + seccomp + RLIMIT</li>
+          <li>环境能力预检与自动降级</li>
           <li>内存与时间限制</li>
-          <li>临时目录自动清理</li>
         </ul>
       </div>
       <div class="card reveal">
@@ -415,7 +415,7 @@
         </div>
         <div class="sec-item">
           <div class="n">07</div>
-          <div><h4>Linux 隔离</h4><p>namespaces（user/mnt/pid/net/ipc/uts）+ seccomp + 只读挂载 + RLIMIT 资源限制，能力与 Windows 侧对齐。</p></div>
+          <div><h4>Linux 隔离</h4><p>namespaces（user/mnt/pid/net/ipc/uts）+ seccomp + 只读挂载 + RLIMIT 资源限制，能力与 Windows 侧对齐；评测前能力预检，在限制非特权 user namespace 的加固环境自动降级，不中断评测。</p></div>
         </div>
         <div class="sec-item">
           <div class="n">08</div>
@@ -437,34 +437,31 @@
     <div class="setup reveal">
       <div class="code-block">
         <div class="bar"><i></i><i></i><i></i></div>
-        <pre><code># 1. 克隆仓库
+        <pre><code># 0. 直接下载 Release（推荐）：clijudge.exe / clijudge-linux.bin
+#    https://github.com/dxxjudges/clijudge/releases
+
+# 1. 或从源码构建
 git clone https://github.com/dxxjudges/clijudge.git
 cd clijudge
+mkdir build && cd build && cmake .. && cmake --build .
 
-# 2. 编译项目
-mkdir build && cd build
-cmake ..
-cmake --build .
-
-# 3. 查看帮助
+# 2. 查看帮助（Linux 下可执行文件为 ./clijudge）
 ./clijudge.exe help
 
-# 4. 创建题目
+# 3. 创建题目
 ./clijudge.exe problem create "A + B Problem"
 
-# 5. 添加测试数据
+# 4. 添加测试数据
 ./clijudge.exe problem testdata 1 create input.in output.out 1000 256 100
 
-# 6. 提交解答
+# 5. 提交解答
 ./clijudge.exe problem submit 1 solution.cpp</code></pre>
       </div>
       <ol>
-        <li>安装 <a href="https://www.mingw-w64.org/" target="_blank" rel="noopener" style="color: var(--accent-2);">MinGW-w64</a> 和 <a href="https://cmake.org/" target="_blank" rel="noopener" style="color: var(--accent-2);">CMake</a></li>
-        <li>克隆仓库并进入项目目录</li>
-        <li>使用 CMake 生成构建文件</li>
-        <li>编译生成可执行文件</li>
+        <li>在 <a href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">Releases</a> 下载预编译二进制（<code>clijudge.exe</code> / <code>clijudge-linux.bin</code>），或克隆源码自行编译</li>
+        <li>源码编译需 <a href="https://www.mingw-w64.org/" target="_blank" rel="noopener" style="color: var(--accent-2);">MinGW-w64</a> + <a href="https://cmake.org/" target="_blank" rel="noopener" style="color: var(--accent-2);">CMake</a>（Windows）或 g++（Linux），亦可按下方 g++ 单命令直接编译</li>
         <li>运行 <code>./clijudge.exe help</code> 查看帮助</li>
-        <li>开始创建题目和管理评测</li>
+        <li>创建题目、添加测试数据并提交评测</li>
       </ol>
     </div>
   </div>
@@ -490,42 +487,52 @@ cmake --build .
 <span class="keyword">├─contest</span>                           <span class="comment"># 比赛管理</span>
 │  <span class="keyword">├─create</span> <span class="string">[标题] [开始时间] [结束时间] [题目1] [题目2]</span>
 │  <span class="keyword">├─delete</span> <span class="string">[编号]</span>
+│  <span class="keyword">├─export</span> <span class="string">[编号] [cdf路径]</span>        <span class="comment"># 导出 LemonLime CDF</span>
+│  <span class="keyword">├─import</span> <span class="string">[cdf路径]</span>              <span class="comment"># 导入 CDF</span>
+│  <span class="keyword">├─leaderboard</span> <span class="string">[编号]</span>            <span class="comment"># 比赛排名</span>
+│  <span class="keyword">├─report</span> <span class="string">[编号] [输出.html]</span>      <span class="comment"># 导出 HTML 比赛报告</span>
 │  <span class="keyword">├─problem</span> <span class="string">[编号] [题目在比赛中的编号]</span>
-│  │  <span class="keyword">├─submit</span> <span class="string">[文件地址]</span>
-│  │  <span class="keyword">└─view</span>
+│  │  <span class="keyword">├─submit</span> <span class="string">[文件地址] [--as 用户]</span>
+│  │  <span class="keyword">└─view</span>                       <span class="comment"># 查看比赛提交</span>
 │  <span class="keyword">└─view</span> <span class="string">[编号]</span>
+<span class="keyword">├─displaylang</span>                        <span class="comment"># 显示语言</span>
+│  <span class="keyword">├─list</span> <span class="string">[--online]</span>              <span class="comment"># 列出本地/在线语言</span>
+│  <span class="keyword">├─switch</span> <span class="string">[语言名]</span>               <span class="comment"># 切换语言</span>
+│  <span class="keyword">├─pull</span> <span class="string">[语言名]</span>                 <span class="comment"># 拉取语言包（不切换）</span>
+│  <span class="keyword">└─delete</span> <span class="string">[语言名]</span>               <span class="comment"># 删除本地语言</span>
 <span class="keyword">├─ide</span>                               <span class="comment"># 代码运行</span>
-│  <span class="keyword">└─run</span> <span class="string">[代码路径] [in文件路径]</span>
+│  <span class="keyword">└─run</span> <span class="string">[代码路径] [in文件路径]</span>     <span class="comment"># 即写即跑</span>
 <span class="keyword">├─problem</span>                           <span class="comment"># 题目管理</span>
 │  <span class="keyword">├─count</span>
-│  <span class="keyword">├─create</span> <span class="string">[标题]</span>
-│  │  <span class="keyword">├─-background</span> <span class="string">[md路径]</span>       <span class="comment"># 从文件加载题目描述</span>
-│  │  <span class="keyword">├─-describe</span> <span class="string">[md路径]</span>         <span class="comment"># 从文件设置题目描述</span>
-│  │  <span class="keyword">├─-exampleio</span> <span class="string">[in路径] [out路径]</span> <span class="comment"># 从文件设置样例输入输出</span>
-│  │  <span class="keyword">├─-instyle</span> <span class="string">[md路径]</span>          <span class="comment"># 从文件设置输入格式说明</span>
-│  │  <span class="keyword">└─-outstyle</span> <span class="string">[md路径]</span>         <span class="comment"># 从文件设置输出格式说明</span>
+│  <span class="keyword">├─create</span> <span class="string">[标题]</span>                 <span class="comment"># 编辑用 edit [编号]，选项相同</span>
+│  │  <span class="keyword">├─-type</span> <span class="string">题型</span>                <span class="comment"># traditional / answers_only / interaction / communication…</span>
+│  │  <span class="keyword">├─-compare</span> <span class="string">比较模式</span>         <span class="comment"># text_strict / text_line / float_* / spj…</span>
+│  │  <span class="keyword">├─-spj-code / -spj-exe</span>       <span class="comment"># Special Judge 源码 / 程序</span>
+│  │  <span class="keyword">├─-float-abs / -float-rel</span>    <span class="comment"># 浮点容差</span>
+│  │  <span class="keyword">├─-subtask-mode</span> <span class="string">模式</span>         <span class="comment"># 子任务计分</span>
+│  │  <span class="keyword">├─-interactor / -grader</span>      <span class="comment"># 交互题交互器 / grader 目录</span>
+│  │  <span class="keyword">├─-background / -describe</span>    <span class="comment"># 题面（文件加载 / 设置）</span>
+│  │  <span class="keyword">├─-exampleio</span> <span class="string">[in] [out]</span>      <span class="comment"># 样例输入输出</span>
+│  │  <span class="keyword">├─-instyle / -outstyle</span>       <span class="comment"># 输入 / 输出格式说明</span>
+│  │  <span class="keyword">├─-generator / -generator-exe</span> <span class="comment"># 测试点生成器</span>
+│  │  <span class="keyword">└─-answer-ext / -source-name / -dependence</span>
 │  <span class="keyword">├─delete</span> <span class="string">[编号]</span>
-│  <span class="keyword">├─edit</span> <span class="string">[编号]</span>
-│  │  <span class="keyword">├─-title</span> <span class="string">[标题]</span>              <span class="comment"># 修改标题</span>
-│  │  <span class="keyword">├─-background</span> <span class="string">[md路径]</span>       <span class="comment"># 从文件加载题目描述</span>
-│  │  <span class="keyword">├─-describe</span> <span class="string">[md路径]</span>         <span class="comment"># 从文件设置题目描述</span>
-│  │  <span class="keyword">├─-exampleio</span> <span class="string">[in路径] [out路径]</span> <span class="comment"># 从文件设置样例输入输出</span>
-│  │  <span class="keyword">├─-instyle</span> <span class="string">[md路径]</span>          <span class="comment"># 从文件设置输入格式说明</span>
-│  │  <span class="keyword">└─-outstyle</span> <span class="string">[md路径]</span>         <span class="comment"># 从文件设置输出格式说明</span>
+│  <span class="keyword">├─edit</span> <span class="string">[编号]</span>                    <span class="comment"># 另含 -title</span>
 │  <span class="keyword">├─export</span> <span class="string">[zip路径]</span>
 │  <span class="keyword">├─import</span> <span class="string">[zip路径]</span>
 │  <span class="keyword">├─list</span> <span class="string">[L=1] [R=50]</span>
-│  <span class="keyword">├─submit</span> <span class="string">[编号] [程序文件路径]</span>
+│  <span class="keyword">├─submit</span> <span class="string">[编号] [程序文件路径] [--as 用户]</span>
 │  <span class="keyword">├─testdata</span> <span class="string">[题目编号]</span>
-│  │  <span class="keyword">├─-set-all</span>
-│  │  <span class="keyword">├─-zip</span> <span class="string">[zip路径]</span>
-│  │  <span class="keyword">├─create</span> <span class="string">[in路径] [out路径] [time] [mem] [pts]</span>
+│  │  <span class="keyword">├─-set-all</span>                  <span class="comment"># 统一全部测试点默认值</span>
+│  │  <span class="keyword">├─-zip</span> <span class="string">[zip路径]</span>            <span class="comment"># 导入测试数据包</span>
+│  │  <span class="keyword">├─create</span> <span class="string">[in] [out] [time] [mem] [pts]</span>  <span class="comment"># in/out 可为 - 占位，由生成器生成</span>
 │  │  <span class="keyword">├─delete</span> <span class="string">[编号]</span>
 │  │  <span class="keyword">└─list</span>
 │  <span class="keyword">└─view</span> <span class="string">[编号]</span>                   <span class="comment"># 查看题目（格式化显示题面）</span>
 <span class="keyword">└─submit</span>                            <span class="comment"># 提交管理</span>
     <span class="keyword">├─count</span>
-    <span class="keyword">└─list</span> <span class="string">[L=1] [R=50]</span></pre>
+    <span class="keyword">├─list</span> <span class="string">[L=1] [R=50]</span>
+    <span class="keyword">└─rejudge</span> <span class="string">[编号]</span>               <span class="comment"># 重新评测</span></pre>
     </div>
   </div>
 </section>
@@ -539,11 +546,11 @@ cmake --build .
     <div class="reveal">
       <details open>
         <summary>如何安装 CliJudge？</summary>
-        <p>克隆仓库后使用 CMake 编译：<code>mkdir build && cd build && cmake .. && cmake --build .</code>。需要 MinGW-w64 和 CMake。</p>
+        <p>在 <a href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">Releases</a> 下载 <code>clijudge.exe</code>（Windows）或 <code>clijudge-linux.bin</code>（Linux，重命名后加执行位）直接使用；或克隆源码编译：Windows 用 CMake + MinGW-w64（<code>mkdir build && cd build && cmake .. && cmake --build .</code>），Linux 用 <code>g++ -std=c++17 -O2 -Wall -I include -o clijudge src/main.cpp</code>。</p>
       </details>
       <details>
         <summary>支持哪些编程语言？</summary>
-        <p>目前支持 C、C++ 和 Python 3。自动检测语言类型，无需手动指定。</p>
+        <p>内置 C / C++ / Python / Java / JavaScript 五种语言，按提交文件扩展名自动识别；还可通过 <code>judge.custom_languages</code> 注册任意自定义语言。</p>
       </details>
       <details>
         <summary>如何添加测试数据？</summary>
@@ -563,7 +570,7 @@ cmake --build .
       </details>
       <details>
         <summary>沙箱是如何工作的？</summary>
-        <p>基于 Windows Job Object 实现进程隔离，支持内存限制、时间限制，确保不可信代码在受控环境中运行。</p>
+        <p>双平台多层隔离：Windows 为 Job Object + 受限令牌 + Low IL；Linux 为 namespaces + seccomp + 只读根文件系统 + RLIMIT。评测前进行环境能力预检，在限制非特权 user namespace 的加固系统（如 Ubuntu 24.04）自动降级，仍保留 seccomp 与资源限制；SPJ / 生成器 / grader 以可信（放宽隔离）模式运行并保留时限。</p>
       </details>
     </div>
   </div>
@@ -572,7 +579,7 @@ cmake --build .
 <footer>
   <div class="wrap">
     <a class="brand" href="#top"><span class="logo">CJ</span> CliJudge</a>
-    <p style="margin-top: 12px;">Windows 命令行评测系统 · 开源 · MIT License</p>
+    <p style="margin-top: 12px;">Windows / Linux 双平台命令行评测系统 · 开源 · MIT License</p>
     <p style="margin-top: 8px; display: flex; gap: 24px; justify-content: center; flex-wrap: wrap;">
       <a href="https://github.com/dxxjudges/clijudge" target="_blank" rel="noopener" style="color: var(--accent-2);">GitHub</a>
       <a href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">下载</a>

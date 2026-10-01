@@ -1,13 +1,17 @@
 # CliJudge
 
-轻量级命令行在线评测系统
+轻量级命令行在线评测系统（Windows / Linux 双平台）
+
+预编译二进制见 [Releases](https://github.com/dxxjudges/clijudge/releases)（`clijudge.exe` / `clijudge-linux.bin`）。
 
 ## 功能特性
 
-- **题目管理**: 创建、编辑、删除、导入导出题目
+- **题目管理**: 创建、编辑、删除、导入导出题目；子任务计分、浮点容差、Special Judge 与交互题（interactor / grader）
 - **测试点生成器**: 题目可附带生成器（源码内嵌或外部可执行文件），每次评测前按测试点编号运行，写入 `data.in`/`data.out` 作为该测试点的评测数据
-- **比赛管理**: 创建比赛、管理比赛题目
-- **提交评测**: 使用沙箱安全执行代码
+- **比赛管理**: 创建比赛、管理比赛题目；LemonLime CDF 导入导出、排行榜与 HTML 比赛报告
+- **提交评测**: 双平台沙箱安全执行代码（Windows：Job Object + 受限令牌 + Low IL；Linux：namespaces + seccomp + RLIMIT，加固环境自动降级）
+- **多语言评测**: 内置 C / C++ / Python / Java / JavaScript，`custom_languages` 可注册任意扩展名
+- **显示语言**: `.cjl` 语言包，`displaylang` 联网切换
 - **数据存储**: JSON格式存储，方便导入导出
 
 ## 子命令列表
@@ -17,51 +21,53 @@
 │  ├─count
 │  ├─create [标题] [md文件路径]
 │  ├─delete [编号]
-│  ├─list [L编号=1] [R编号=50]
+│  ├─list [L=1] [R=50]
 │  └─view [编号]
 ├─contest
 │  ├─create [标题] [开始时间] [结束时间] [题目1] [题目2]
 │  ├─delete [编号]
+│  ├─export [编号] [cdf路径]          # 导出 LemonLime CDF
+│  ├─import [cdf路径]                # 导入 CDF
+│  ├─leaderboard [编号]              # 比赛排名
+│  ├─report [编号] [输出.html]        # 导出 HTML 比赛报告
 │  ├─problem [编号] [题目在比赛中的编号]
-│  │  ├─submit [文件地址]
-│  │  └─view
+│  │  ├─submit [文件地址] [--as 用户]
+│  │  └─view                         # 查看比赛提交
 │  └─view [编号]
+├─displaylang
+│  ├─list [--online]                 # 列出本地/在线语言
+│  ├─switch [语言名]                  # 切换显示语言
+│  ├─pull [语言名]                    # 拉取语言包（不切换）
+│  └─delete [语言名]                  # 删除本地语言
 ├─ide
-│  └─run [代码路径] [in文件路径]
+│  └─run [代码路径] [in文件路径]       # 即写即跑
 ├─problem
 │  ├─count
-│  ├─create [标题]
-│  │  ├─-background [md路径]
-│  │  ├─-describe [md路径]
-│  │  ├─-exampleio [in路径] [out路径]
-│  │  ├─-instyle [md路径]
-│  │  ├─-generator [生成器源码/程序路径]
-│  │  ├─-generator-exe [生成器程序路径]
-│  │  └─-outstyle [md路径]
+│  ├─create [标题]                   # 编辑用 edit [编号]，选项相同
+│  │  ├─-type / -compare / -spj-code / -spj-exe
+│  │  ├─-float-abs / -float-rel / -subtask-mode
+│  │  ├─-answer-ext / -source-name / -dependence
+│  │  ├─-interactor / -grader
+│  │  ├─-background / -describe / -exampleio
+│  │  ├─-instyle / -outstyle
+│  │  └─-generator / -generator-exe
 │  ├─delete [编号]
-│  ├─edit [编号]
-│  │  ├─-background [md路径]
-│  │  ├─-describe [md路径]
-│  │  ├─-exampleio [in路径] [out路径]
-│  │  ├─-instyle [md路径]
-│  │  ├─-generator [生成器源码/程序路径]
-│  │  ├─-generator-exe [生成器程序路径]
-│  │  ├─-outstyle [md路径]
-│  │  └─-title [标题]
+│  ├─edit [编号]                     # 另含 -title
 │  ├─export [zip路径]
 │  ├─import [zip路径]
 │  ├─list [L=1] [R=50]
-│  ├─submit [编号] [程序文件路径]
+│  ├─submit [编号] [程序文件路径] [--as 用户]
 │  ├─testdata [题目编号]
 │  │  ├─-set-all
 │  │  ├─-zip [zip路径]
-│  │  ├─create [in] [out] [time] [mem] [pts] (in/out 可为 - 占位, 由生成器生成)
+│  │  ├─create [in] [out] [time] [mem] [pts]  (in/out 可为 - 占位, 由生成器生成)
 │  │  ├─delete [编号]
 │  │  └─list
 │  └─view [编号]
 └─submit
     ├─count
-    └─list [L=1] [R=50]
+    ├─list [L=1] [R=50]
+    └─rejudge [编号]                  # 重新评测
 ```
 
 ## 编译

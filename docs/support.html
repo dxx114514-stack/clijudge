@@ -208,7 +208,7 @@
     <div class="grid g2 reveal">
       <div class="card">
         <h3>如何编译 CliJudge？</h3>
-        <p>使用 CMake 编译：</p>
+        <p>推荐在 <a href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">Releases</a> 下载预编译二进制（<code>clijudge.exe</code> / <code>clijudge-linux.bin</code>）。需要自行编译时，使用 CMake：</p>
         <div class="code-block" style="margin-top: 12px;">
           <div class="bar"><i></i><i></i><i></i></div>
           <pre><code>mkdir build
@@ -216,12 +216,18 @@ cd build
 cmake ..
 cmake --build .</code></pre>
         </div>
-        <p style="margin-top: 12px;">或使用 g++ 直接编译：</p>
+        <p style="margin-top: 12px;">或使用 g++ 直接编译（Windows）：</p>
         <div class="code-block" style="margin-top: 12px;">
           <div class="bar"><i></i><i></i><i></i></div>
           <pre><code>g++ -std=c++17 -O2 -Wall -static -I include \
   -o clijudge.exe src/main.cpp \
   -lpsapi -luserenv -lole32 -lwinhttp</code></pre>
+        </div>
+        <p style="margin-top: 12px;">Linux 下无平台链接参数：</p>
+        <div class="code-block" style="margin-top: 12px;">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <pre><code>g++ -std=c++17 -O2 -Wall -I include \
+  -o clijudge src/main.cpp</code></pre>
         </div>
       </div>
       <div class="card">
@@ -234,8 +240,11 @@ cmake --build .</code></pre>
         <ul>
           <li>C / C++ (.c, .cpp, .cc, .cxx)</li>
           <li>Python 3 (.py)</li>
+          <li>Java (.java)</li>
+          <li>JavaScript (.js)</li>
+          <li>自定义语言（<code>judge.custom_languages</code> 注册任意扩展名）</li>
         </ul>
-        <p style="margin-top: 12px;">自动检测语言类型，无需手动指定。</p>
+        <p style="margin-top: 12px;">按扩展名自动检测语言类型，无需手动指定。</p>
       </div>
       <div class="card">
         <h3>如何导入导出题目？</h3>
@@ -285,7 +294,7 @@ clijudge.exe problem import problem_1.json</code></pre>
           </li>
           <li>
             <strong>沙箱执行失败</strong>
-            确保以管理员身份运行，或检查 Windows 安全设置。
+            Windows 下尝试以管理员身份运行，或检查 Windows 安全设置；Linux 下无需 root，评测前会自动做环境能力预检并在加固系统（如 Ubuntu 24.04）降级，若仍失败请到 GitHub Issues 反馈并附系统版本。
           </li>
           <li>
             <strong>找不到编译器</strong>
@@ -327,7 +336,7 @@ clijudge.exe problem import problem_1.json</code></pre>
 <footer>
   <div class="wrap">
     <a class="brand" href="index.html"><span class="logo">CJ</span> CliJudge</a>
-    <p style="margin-top: 12px;">Windows 命令行评测系统 · 开源 · MIT License</p>
+    <p style="margin-top: 12px;">Windows / Linux 双平台命令行评测系统 · 开源 · MIT License</p>
     <p style="margin-top: 8px; display: flex; gap: 24px; justify-content: center; flex-wrap: wrap;">
       <a href="https://github.com/dxxjudges/clijudge" target="_blank" rel="noopener" style="color: var(--accent-2);">GitHub</a>
       <a href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">下载</a>
