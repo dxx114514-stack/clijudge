@@ -37,7 +37,7 @@ using json = nlohmann::json;
 namespace fs = std::filesystem;
 
 // 仓库信息
-const std::string REPO_OWNER = "dxx114514-stack";
+const std::string REPO_OWNER = "dxxjudges";
 const std::string REPO_NAME = "clijudge";
 const std::string LANGS_BRANCH = "languages";
 
