@@ -994,6 +994,61 @@ inline void sbxDebugLog(const char* site, int err, int level) {
     app("\n");
     sbxDebugAppend(buf, i);
 }
+inline void sbxDebugAttr(const char* tag, int level) {
+    const char* path = getenv("CLIJUDGE_SANDBOX_DEBUG");
+    if (!path || !path[0]) return;
+    char aa[96];
+    ssize_t m = 0;
+    int fd = open("/proc/self/attr/current", O_RDONLY);
+    if (fd >= 0) { m = read(fd, aa, sizeof(aa) - 1); close(fd); }
+    if (m < 0) m = 0;
+    aa[m] = 0;
+    for (ssize_t k = 0; k < m; k++) if (aa[k] == '\n') aa[k] = ' ';
+    char line[208];
+    int n = snprintf(line, sizeof(line), "sbx-ATTR site=%s level=%d aa=%s\n", tag, level, aa);
+    if (n > 0) sbxDebugAppend(line, (size_t)n);
+}
+
+// ── 沙箱能力预检 (每进程一次): 用与 level2 完全相同的 clone flags 起
+//    探测子进程, 验证 uid_map 自写与 seccomp 安装。返回位掩码:
+//    bit0=uid_map 可写, bit1=seccomp 可安装; 探测无法进行 → 3 (不降级)。
+//    Ubuntu 24.04+ AppArmor (apparmor_restrict_unprivileged_userns=1) 等
+//    加固环境会令 uid_map 写入 EPERM, 此时命名空间阶梯应直接从 level0
+//    起步 (seccomp+rlimit 兜底), 避免子进程 fail-closed 126 全量拒跑。 ──
+inline int probeSandboxCaps() {
+    uid_t u = geteuid();
+    gid_t g = getegid();
+    pid_t pid = (pid_t)syscall(SYS_clone,
+        (unsigned long)(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID |
+                        CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWUTS | SIGCHLD), 0);
+    if (pid < 0) return 3; // 连 clone 都起不来 → 交给阶梯自然降级, seccomp 假定可用
+    if (pid == 0) {
+        int bits = 0;
+        char um[64], gm[64];
+        snprintf(um, sizeof(um), "0 %u 1\n", (unsigned)u);
+        snprintf(gm, sizeof(gm), "0 %u 1\n", (unsigned)g);
+        writeProcFile("/proc/self/setgroups", "deny");
+        if (writeProcFile("/proc/self/uid_map", um) &&
+            writeProcFile("/proc/self/gid_map", gm))
+            bits |= 1;
+#ifdef __x86_64__
+        if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0) {
+            std::vector<struct sock_filter> f = buildSeccompFilter(false);
+            struct sock_fprog prog;
+            prog.len = (unsigned short)f.size();
+            prog.filter = f.data();
+            if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) == 0)
+                bits |= 2;
+        }
+#else
+        bits |= 2;
+#endif
+        _exit(bits);
+    }
+    int st = 0;
+    if (waitpid(pid, &st, 0) != pid) return 3;
+    return WIFEXITED(st) ? WEXITSTATUS(st) : 3;
+}
 
 // ── fork/clone 子进程初始化上下文（父进程内构建, 子进程只读）──────
 struct LinuxChildCtx {
@@ -1081,8 +1136,9 @@ inline SandboxResult sandbox_run(
     // 进程数控制: untrusted 且上限 1 → seccomp 直接拒绝创建进程 (对齐 Windows
     // ActiveProcessLimit=1 的失败语义, 线程不受限); 其余场景父进程轮询进程组计数。
     bool denyProcessCreate = !trusted && maxProcesses == 1;
+    static const int kSbxCaps = probeSandboxCaps();
 #ifdef __x86_64__
-    ctx.applySeccomp = !trusted;
+    ctx.applySeccomp = !trusted && (kSbxCaps & 2);
     if (ctx.applySeccomp) ctx.filter = buildSeccompFilter(denyProcessCreate);
 #else
     denyProcessCreate = false; // 非 x86_64 无过滤器规则 → 退回轮询计数
@@ -1096,14 +1152,16 @@ inline SandboxResult sandbox_run(
     };
     const int attempts = trusted ? 1 : 3;
     pid_t pid = -1;
-    int attemptErrno[3] = {0, 0, 0};
-    for (int a = 0; a < attempts; a++) {
+    int attemptErrno[3] = {-1, -1, -1};
+    // 预检 uid_map 不可写 → 跳过全部命名空间层, 直接 level0 (seccomp+rlimit)
+    const int startA = (trusted || (kSbxCaps & 1)) ? 0 : 2;
+    for (int a = startA; a < attempts; a++) {
         ctx.level = trusted ? 0 : 2 - a;
         int flags = trusted ? 0 : kLevelFlags[a];
         pid = (flags == 0) ? fork()
                            : (pid_t)syscall(SYS_clone, (unsigned long)(flags | SIGCHLD), 0);
         if (pid >= 0) break;
-        if (a < 3) attemptErrno[a] = errno;
+        attemptErrno[a] = errno;
     }
     if (pid < 0) {
         sbxDebugLog("clone-all", errno, ctx.level);
@@ -1111,10 +1169,10 @@ inline SandboxResult sandbox_run(
         return result;
     }
     if (pid > 0) {
-        char info[192];
+        char info[224];
         int n = snprintf(info, sizeof(info),
-                         "sbx-INFO level=%d trusted=%d a0=%d a1=%d a2=%d euid=%u pid=%d\n",
-                         ctx.level, trusted ? 1 : 0,
+                         "sbx-INFO level=%d trusted=%d caps=%d a0=%d a1=%d a2=%d euid=%u pid=%d\n",
+                         ctx.level, trusted ? 1 : 0, kSbxCaps,
                          attemptErrno[0], attemptErrno[1], attemptErrno[2],
                          (unsigned)geteuid(), (int)pid);
         if (n > 0) sbxDebugAppend(info, (size_t)n);
@@ -1123,13 +1181,16 @@ inline SandboxResult sandbox_run(
     if (pid == 0) {
         // 用户命名空间映射 (level>=1): 子进程自写; 失败即中止
         if (ctx.level >= 1) {
-            writeProcFile("/proc/self/setgroups", "deny");
+            if (!writeProcFile("/proc/self/setgroups", "deny"))
+                sbxDebugLog("setgroups", errno, ctx.level);
             if (!writeProcFile("/proc/self/uid_map", ctx.uidMap)) {
                 sbxDebugLog("uid_map", errno, ctx.level);
+                sbxDebugAttr("uid_map", ctx.level);
                 _exit(126);
             }
             if (!writeProcFile("/proc/self/gid_map", ctx.gidMap)) {
                 sbxDebugLog("gid_map", errno, ctx.level);
+                sbxDebugAttr("gid_map", ctx.level);
                 _exit(126);
             }
         }
