@@ -855,9 +855,17 @@ inline int cmdView(const std::string& dataDir, int id) {
             std::cout << "Float Rel Tolerance: " << p.value("float_rel_tolerance", 0.0) << std::endl;
         }
         
+        std::string spjSource = p.value("spj_code", "");
         std::string specialJudgeExe = p.value("special_judge_exe", "");
-        if (!specialJudgeExe.empty()) {
-            std::cout << "Special Judge Exe: " << specialJudgeExe << std::endl;
+        if (!spjSource.empty()) {
+            std::cout << "Source: embedded (" << spjSource.size() << " bytes)" << std::endl;
+        } else if (!specialJudgeExe.empty()) {
+            // 字段误存源码(含换行)时只给摘要, 不直接输出代码
+            if (specialJudgeExe.find('\n') != std::string::npos) {
+                std::cout << "Source: embedded (" << specialJudgeExe.size() << " bytes)" << std::endl;
+            } else {
+                std::cout << "Special Judge Exe: " << specialJudgeExe << std::endl;
+            }
         }
         
         const auto& allowedLangs = p.value("allowed_languages", json::array());
@@ -869,20 +877,6 @@ inline int cmdView(const std::string& dataDir, int id) {
             }
             std::cout << std::endl;
         }
-    }
-
-    // 测试点生成器
-    std::string genCode = p.value("generator_code", "");
-    std::string genExe = p.value("generator_exe", "");
-    if (!genCode.empty() || !genExe.empty()) {
-        std::cout << std::endl;
-        std::cout << "## Generator" << std::endl;
-        if (!genCode.empty()) {
-            std::cout << "Source: embedded (" << genCode.size() << " bytes)" << std::endl;
-        } else {
-            std::cout << "Exe: " << genExe << std::endl;
-        }
-        std::cout << "Usage: generator <test point id>, writes data.in / data.out before each judge" << std::endl;
     }
 
     return 0;

@@ -197,7 +197,7 @@ Problem created with ID: 1
 
 ### clijudge problem view [编号] — 查看题目
 
-格式化输出题面：`=== Problem N ===`、Title、Description / Input / Output、样例（`## Sample Input/Output`）、Hint、`## Limits`（时间 / 内存 / 公开 / 隐藏）、非默认题型或比较模式时的 `## Special Judge` 段、以及 `## Generator` 段（内嵌字节数或可执行路径）。
+格式化输出题面：`=== Problem N ===`、Title、Description / Input / Output、样例（`## Sample Input/Output`）、Hint、`## Limits`（时间 / 内存 / 公开 / 隐藏）、非默认题型或比较模式时的 `## Special Judge` 段。SPJ 为内嵌源码时仅显示 `Source: embedded (N bytes)`，不直接输出代码；可执行文件显示 `Special Judge Exe:` 路径。不输出生成器信息。
 
 ### clijudge problem list [L=1] [R=50] — 列出题目
 
