@@ -4,49 +4,81 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag to publish (e.g. v1.1.2)"
-        required: true
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  publish:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        shell: bash
+        run: |
+          g++ -std=c++17 -O2 -Wall -static -I include -o clijudge.exe src/main.cpp -lpsapi -luserenv -lole32 -lwinhttp
+
+      - name: Smoke test
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\smoke_windows.ps1
+          exit $LASTEXITCODE
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-prebuild-windows
+          path: clijudge.exe
+
+  build-linux:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve tag and version
-        id: meta
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+      - name: Build
         run: |
-          TAG="${INPUT_TAG:-$RELEASE_TAG}"
-          if [ -z "$TAG" ]; then
-            echo "::error::no release tag (set input tag for manual runs)"
-            exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          g++ -std=c++17 -O2 -Wall -I include -o clijudge src/main.cpp
 
-      - name: Download release binaries
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Smoke test
+        run: bash tests/smoke_linux.sh
+
+      - name: Rename for package
+        run: mv clijudge clijudge-linux.bin
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-prebuild-linux
+          path: clijudge-linux.bin
+
+  publish:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-prebuild-windows
+          path: prebuilds/windows
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-prebuild-linux
+          path: prebuilds/linux
+
+      - name: Arrange prebuilds
         run: |
-          mkdir -p prebuilds/windows prebuilds/linux dist
-          gh release download "${{ steps.meta.outputs.tag }}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern 'clijudge.exe' \
-            --pattern 'clijudge-linux.bin' \
-            --dir dist
-          mv dist/clijudge.exe prebuilds/windows/clijudge.exe
-          mv dist/clijudge-linux.bin prebuilds/linux/clijudge-linux.bin
           chmod +x prebuilds/linux/clijudge-linux.bin
           ls -l prebuilds/windows prebuilds/linux
 
@@ -56,8 +88,17 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      - name: Sync package version with release tag
-        run: npm pkg set version="${{ steps.meta.outputs.version }}"
+      - name: Validate package version against release tag
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${TAG#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::package.json version ($PKG_VERSION) != release tag ($TAG_VERSION) - bump package.json in the build commit"
+            exit 1
+          fi
 
       - name: Publish to npm
         env:
