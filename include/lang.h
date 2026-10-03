@@ -45,6 +45,7 @@ inline std::string trf(const std::string& key, const std::string& fallback,
 const std::string REPO_OWNER = "dxxjudges";
 const std::string REPO_NAME = "clijudge";
 const std::string LANGS_BRANCH = "languages";
+const std::string GITEE_OWNER = "dxx114514"; // 语言包镜像仓库所有者（Gitee）
 
 // 获取 exe 所在目录
 inline std::string getExeDir() {
@@ -344,6 +345,30 @@ inline std::string getCurrentLang() {
     return config.value("current_lang", "");
 }
 
+// 语言包源（github/gitee），displaylang source 命令可切换
+inline std::string langSource() {
+    std::string s = loadConfig().value("lang_source", "github");
+    return s == "gitee" ? "gitee" : "github";
+}
+
+// 当前源的语言文件 raw 下载基址（末尾含 /）
+inline std::string langSourceRawBase() {
+    if (langSource() == "gitee")
+        return "https://gitee.com/" + GITEE_OWNER + "/" + REPO_NAME +
+               "/raw/" + LANGS_BRANCH + "/langs/";
+    return "https://raw.githubusercontent.com/" + REPO_OWNER + "/" + REPO_NAME +
+           "/" + LANGS_BRANCH + "/langs/";
+}
+
+// 当前源的在线语言列表 API（两端均返回 [{"type":"file","name":"xx.cjl"}] 数组）
+inline std::string langSourceApiUrl() {
+    if (langSource() == "gitee")
+        return "https://gitee.com/api/v5/repos/" + GITEE_OWNER + "/" + REPO_NAME +
+               "/contents/langs?ref=" + LANGS_BRANCH;
+    return "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME +
+           "/contents/langs?ref=" + LANGS_BRANCH;
+}
+
 // 通过 HTTP GET 获取内容
 #ifdef _WIN32
 inline std::string httpGet(const std::string& url) {
@@ -484,9 +509,8 @@ inline std::string httpGet(const std::string& url) {
 
 // 获取在线语言列表
 inline json getOnlineLangs() {
-    // 使用 GitHub API 获取 languages 目录下的文件列表
-    std::string url = "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + 
-                      "/contents/langs?ref=" + LANGS_BRANCH;
+    // 按当前语言包源（github/gitee）查询 langs 目录下的文件列表
+    std::string url = langSourceApiUrl();
     
     std::string response = httpGet(url);
     if (response.empty()) {
@@ -519,8 +543,7 @@ inline bool downloadLang(const std::string& langName, bool* usedBuiltin = nullpt
         std::cerr << trf("err.invalid_lang_name", "Invalid language name: {0}", {langName}) << std::endl;
         return false;
     }
-    std::string url = "https://raw.githubusercontent.com/" + REPO_OWNER + "/" + REPO_NAME + 
-                      "/" + LANGS_BRANCH + "/langs/" + langName + ".cjl";
+    std::string url = langSourceRawBase() + langName + ".cjl";
     
     std::string content = httpGet(url);
     if (content.empty()) {
@@ -809,6 +832,26 @@ inline int cmdPull(const std::string& langName) {
         return 1;
     }
     
+    return 0;
+}
+
+// source - 查询/切换语言包源
+inline int cmdSource(const std::string& name) {
+    if (name.empty()) {
+        std::cout << trf("displaylang.source_current", "Language pack source: {0}", {langSource()}) << std::endl;
+        return 0;
+    }
+    if (name != "github" && name != "gitee") {
+        std::cerr << trf("displaylang.source_invalid", "Invalid source: {0} (expected github or gitee)", {name}) << std::endl;
+        return 1;
+    }
+    json config = loadConfig();
+    config["lang_source"] = name;
+    if (!saveConfig(config)) {
+        std::cerr << tr("displaylang.source_save_failed", "Failed to save language source setting.") << std::endl;
+        return 1;
+    }
+    std::cout << trf("displaylang.source_set", "Language pack source set to: {0}", {name}) << std::endl;
     return 0;
 }
 

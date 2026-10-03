@@ -241,6 +241,17 @@ echo "$OUT" | grep -q "Float Rel Tolerance: 1e-06"; t "reimport rel tolerance" $
 run problem testdata "$NID"
 echo "$OUT" | grep -q '"time_limit": 5000'; t "reimport tc time 5000" $? "$OUT"
 
+# lang source: query default / invalid rejected / set+persist roundtrip (gitee mirror)
+run displaylang source
+[ $CODE -eq 0 ] && echo "$OUT" | grep -q "Language pack source: github"; t "source query default" $? "code=$CODE $OUT"
+run displaylang source bogus
+[ $CODE -eq 1 ] && echo "$OUT" | grep -q "Invalid source: bogus"; t "source invalid rejected" $? "code=$CODE $OUT"
+run displaylang source gitee
+[ $CODE -eq 0 ] && echo "$OUT" | grep -q "Language pack source set to: gitee"; t "source set gitee" $? "code=$CODE $OUT"
+grep -Eq '"lang_source": *"gitee"' "$CFG"; t "source persisted in config" $?
+run displaylang source github
+[ $CODE -eq 0 ] && grep -Eq '"lang_source": *"github"' "$CFG"; t "source restore github" $? "code=$CODE $OUT"
+
 echo ""
 echo "PASS: $pass  FAIL: $fail"
 if [ -s "$CLIJUDGE_SANDBOX_DEBUG" ]; then

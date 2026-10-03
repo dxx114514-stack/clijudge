@@ -226,6 +226,19 @@ Check "reimport rel tolerance" ($r.out -match "Float Rel Tolerance: 1e-06") $r.o
 $r = Run @("problem", "testdata", "$nId")
 Check "reimport tc time 5000" ($r.out -match '"time_limit": 5000') $r.out
 
+# T23 lang source: query default / invalid rejected / set+persist roundtrip (gitee mirror)
+$r = Run @("displaylang", "source")
+Check "source query default" (($r.code -eq 0) -and ($r.out -match "Language pack source: github")) "code=$($r.code) out=$($r.out)"
+$r = Run @("displaylang", "source", "bogus")
+Check "source invalid rejected" (($r.code -eq 1) -and ($r.out -match "Invalid source: bogus")) "code=$($r.code) out=$($r.out)"
+$r = Run @("displaylang", "source", "gitee")
+Check "source set gitee" (($r.code -eq 0) -and ($r.out -match "Language pack source set to: gitee")) $r.out
+$srcCfg = [IO.File]::ReadAllText($cfgPath)
+Check "source persisted in config" ($srcCfg -match '"lang_source":\s*"gitee"') $srcCfg
+$r = Run @("displaylang", "source", "github")
+$srcCfg = [IO.File]::ReadAllText($cfgPath)
+Check "source restore github" (($r.code -eq 0) -and ($srcCfg -match '"lang_source":\s*"github"')) $r.out
+
 Write-Host ""
 Write-Host "PASS: $script:pass  FAIL: $script:fail"
 Remove-Item -Path $root -Recurse -Force -ErrorAction SilentlyContinue
