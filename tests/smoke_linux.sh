@@ -182,6 +182,10 @@ run problem export "$ZID" "$W/中文导出.zip"
 run problem delete "$ZID"
 echo "$OUT" | grep -q "Problem $ZID deleted\."; t "zh delete" $? "$OUT"
 
+# built-in language 'en' must not be deletable
+run displaylang delete en
+[ $CODE -eq 1 ] && echo "$OUT" | grep -q "Built-in language 'en' cannot be deleted"; t "delete builtin en refused" $? "code=$CODE $OUT"
+
 echo ""
 echo "PASS: $pass  FAIL: $fail"
 if [ -s "$CLIJUDGE_SANDBOX_DEBUG" ]; then

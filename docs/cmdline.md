@@ -458,7 +458,7 @@ Local languages:
 
 ### clijudge displaylang delete [语言名] — 删除本地语言
 
-若删除的是当前语言，先停用（`Deactivated current language.`）再删除。
+若删除的是当前语言，先停用（`Deactivated current language.`）再删除。内置语言 `en` 拒绝删除（exit 1，`Built-in language 'en' cannot be deleted.`；刷新本地副本用 `displaylang pull en`）。
 
 **输出：** `Deleted language: zh`
 

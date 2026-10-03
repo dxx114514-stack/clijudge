@@ -163,6 +163,10 @@ Check "zh export path" (($r.code -eq 0) -and (Test-Path "$work\中文导出.zip"
 $r = Run @("problem", "delete", "$zhId")
 Check "zh delete" ($r.out -match "Problem $zhId deleted\.") $r.out
 
+# T19 built-in language 'en' must not be deletable
+$r = Run @("displaylang", "delete", "en")
+Check "delete builtin en refused" (($r.code -eq 1) -and ($r.out -match "Built-in language 'en' cannot be deleted")) "code=$($r.code) out=$($r.out)"
+
 Write-Host ""
 Write-Host "PASS: $script:pass  FAIL: $script:fail"
 Remove-Item -Path $root -Recurse -Force -ErrorAction SilentlyContinue

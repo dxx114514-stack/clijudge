@@ -705,7 +705,15 @@ inline int cmdDelete(const std::string& langName) {
         std::cerr << "Invalid language name: " << langName << std::endl;
         return 1;
     }
-    
+    // en 为内置语言（二进制内嵌 + 离线回退），本地文件只是缓存副本，
+    // 删除只会清空 current_lang 逼用户重新 switch，没有意义
+    if (langName == "en") {
+        std::cerr << "Built-in language 'en' cannot be deleted. "
+                  << "Use 'clijudge displaylang switch [langname]' to change language, "
+                  << "or 'clijudge displaylang pull en' to refresh the local copy." << std::endl;
+        return 1;
+    }
+
     std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
     if (!fs::exists(path)) {
         std::cerr << "Language file not found: " << langName << std::endl;
