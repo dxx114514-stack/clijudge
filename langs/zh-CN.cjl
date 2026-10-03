@@ -193,6 +193,11 @@
       "online_header": "在线语言:",
       "online_none": "  (无或网络错误)",
       "pull": "拉取语言（不切换）",
+      "source": "语言包源",
+      "source_current": "语言包源: {0}",
+      "source_invalid": "无效的源: {0}（应为 github 或 gitee）",
+      "source_save_failed": "保存语言源设置失败。",
+      "source_set": "语言包源已设置为: {0}",
       "switch": "切换显示语言",
       "updated": "已更新语言: {0}",
       "using_builtin": "使用内置语言包。"
