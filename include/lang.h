@@ -345,26 +345,78 @@ inline std::string getCurrentLang() {
     return config.value("current_lang", "");
 }
 
-// 语言包源（github/gitee），displaylang source 命令可切换
+// 语言包源（github/gitee/custom），displaylang source 命令可切换
 inline std::string langSource() {
     std::string s = loadConfig().value("lang_source", "github");
-    return s == "gitee" ? "gitee" : "github";
+    if (s == "gitee" || s == "custom") return s;
+    return "github";
+}
+
+// 自定义源的 raw 基址（保存时已规范化为以 / 结尾）；无有效值返回空
+inline std::string langSourceCustomRaw() {
+    std::string u = loadConfig().value("lang_source_url", "");
+    if (!u.empty() && (u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0))
+        return u;
+    return "";
 }
 
 // 当前源的语言文件 raw 下载基址（末尾含 /）
 inline std::string langSourceRawBase() {
-    if (langSource() == "gitee")
+    std::string s = langSource();
+    if (s == "gitee")
         return "https://gitee.com/" + GITEE_OWNER + "/" + REPO_NAME +
                "/raw/" + LANGS_BRANCH + "/langs/";
+    if (s == "custom") {
+        std::string u = langSourceCustomRaw();
+        if (!u.empty()) return u;
+    }
     return "https://raw.githubusercontent.com/" + REPO_OWNER + "/" + REPO_NAME +
            "/" + LANGS_BRANCH + "/langs/";
 }
 
-// 当前源的在线语言列表 API（两端均返回 [{"type":"file","name":"xx.cjl"}] 数组）
+// 由 raw 基址推导在线列表 API（仅识别 github/gitee 布局，推不出返回空）
+inline std::string deriveApiUrl(const std::string& rawBase) {
+    // https://raw.githubusercontent.com/{owner}/{repo}/{branch}/langs/
+    const std::string gh = "https://raw.githubusercontent.com/";
+    if (rawBase.rfind(gh, 0) == 0) {
+        std::string rest = rawBase.substr(gh.size());
+        size_t a = rest.find('/');
+        size_t b = a == std::string::npos ? std::string::npos : rest.find('/', a + 1);
+        size_t c = b == std::string::npos ? std::string::npos : rest.find('/', b + 1);
+        if (a == std::string::npos || b == std::string::npos || c == std::string::npos)
+            return "";
+        return "https://api.github.com/repos/" + rest.substr(0, b) +
+               "/contents/langs?ref=" + rest.substr(b + 1, c - b - 1);
+    }
+    // https://gitee.com/{owner}/{repo}/raw/{branch}/langs/
+    const std::string ge = "https://gitee.com/";
+    if (rawBase.rfind(ge, 0) == 0) {
+        std::string rest = rawBase.substr(ge.size());
+        size_t a = rest.find('/');
+        size_t b = a == std::string::npos ? std::string::npos : rest.find('/', a + 1);
+        size_t c = b == std::string::npos ? std::string::npos : rest.find('/', b + 1);
+        size_t d = c == std::string::npos ? std::string::npos : rest.find('/', c + 1);
+        if (a == std::string::npos || b == std::string::npos ||
+            c == std::string::npos || d == std::string::npos)
+            return "";
+        if (rest.substr(b + 1, c - b - 1) != "raw") return "";
+        return "https://gitee.com/api/v5/repos/" + rest.substr(0, b) +
+               "/contents/langs?ref=" + rest.substr(c + 1, d - c - 1);
+    }
+    return "";
+}
+
+// 当前源的在线语言列表 API（两端均返回 [{"type":"file","name":"xx.cjl"}] 数组；custom 推不出返回空）
 inline std::string langSourceApiUrl() {
-    if (langSource() == "gitee")
+    std::string s = langSource();
+    if (s == "gitee")
         return "https://gitee.com/api/v5/repos/" + GITEE_OWNER + "/" + REPO_NAME +
                "/contents/langs?ref=" + LANGS_BRANCH;
+    if (s == "custom") {
+        std::string u = langSourceCustomRaw();
+        if (u.empty()) return "";
+        return deriveApiUrl(u);
+    }
     return "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME +
            "/contents/langs?ref=" + LANGS_BRANCH;
 }
@@ -412,6 +464,8 @@ inline std::string httpGet(const std::string& url) {
                                       WINHTTP_NO_PROXY_NAME,
                                       WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) return "";
+    // 源检测等交互路径不能挂在默认 60s/阶段超时上（死主机最长 3~4 分钟）
+    WinHttpSetTimeouts(hSession, 15000, 15000, 15000, 15000);
     
     HINTERNET hConnect = WinHttpConnect(hSession, wHost.c_str(),
                                          (INTERNET_PORT)port, 0);
@@ -491,7 +545,7 @@ inline std::string httpGet(const std::string& url) {
     // URL 将拼入 shell 命令，先做白名单校验（防止注入）
     for (char c : url) {
         bool ok = (unsigned char)c < 0x80 &&
-                  (isalnum((unsigned char)c) || std::strchr(":/._-~?&=%+", c) != nullptr);
+                  (isalnum((unsigned char)c) || std::strchr(":/._-~?&=%+@,", c) != nullptr);
         if (!ok) return "";
     }
     std::string cmd = "curl -fsSL --max-time 30 '" + url + "'";
@@ -509,8 +563,9 @@ inline std::string httpGet(const std::string& url) {
 
 // 获取在线语言列表
 inline json getOnlineLangs() {
-    // 按当前语言包源（github/gitee）查询 langs 目录下的文件列表
+    // 按当前语言包源（github/gitee/custom）查询 langs 目录下的文件列表
     std::string url = langSourceApiUrl();
+    if (url.empty()) return json::array();
     
     std::string response = httpGet(url);
     if (response.empty()) {
@@ -835,23 +890,66 @@ inline int cmdPull(const std::string& langName) {
     return 0;
 }
 
-// source - 查询/切换语言包源
-inline int cmdSource(const std::string& name) {
+// 自定义源在线检测: GET <base>en.cjl 须为含 strings 的 JSON 对象
+// 返回空串 = 通过; 否则为已本地化的错误信息
+inline std::string checkSourceUrl(std::string baseUrl) {
+    if (baseUrl.rfind("http://", 0) != 0 && baseUrl.rfind("https://", 0) != 0)
+        return trf("displaylang.source_invalid_url",
+                   "Invalid source URL: {0} (must start with http:// or https://)", {baseUrl});
+    if (baseUrl.back() != '/') baseUrl += '/';
+    std::string content = httpGet(baseUrl + "en.cjl");
+    if (content.empty())
+        return trf("displaylang.source_unreachable",
+                   "Source check failed: cannot download en.cjl from {0}", {baseUrl});
+    try {
+        json probe = json::parse(content);
+        if (!probe.is_object() || !probe.contains("strings") || !probe["strings"].is_object())
+            throw std::runtime_error("not a language pack");
+    } catch (...) {
+        return trf("displaylang.source_not_pack",
+                   "Source check failed: {0} does not serve a valid language pack", {baseUrl});
+    }
+    return "";
+}
+
+// source - 查询/切换语言包源（github / gitee / custom，custom 设置时在线检测）
+inline int cmdSource(const std::string& name, const std::string& url) {
     if (name.empty()) {
         std::cout << trf("displaylang.source_current", "Language pack source: {0}", {langSource()}) << std::endl;
+        if (langSource() == "custom") {
+            std::string u = langSourceCustomRaw();
+            if (!u.empty())
+                std::cout << trf("displaylang.source_current_url", "Language pack source URL: {0}", {u}) << std::endl;
+        }
         return 0;
     }
-    if (name != "github" && name != "gitee") {
-        std::cerr << trf("displaylang.source_invalid", "Invalid source: {0} (expected github or gitee)", {name}) << std::endl;
+    if (name != "github" && name != "gitee" && name != "custom") {
+        std::cerr << trf("displaylang.source_invalid", "Invalid source: {0} (expected github, gitee or custom)", {name}) << std::endl;
         return 1;
     }
     json config = loadConfig();
+    std::string customBase;
+    if (name == "custom") {
+        customBase = url.empty() ? config.value("lang_source_url", "") : url;
+        if (customBase.empty()) {
+            std::cerr << tr("usage.displaylang_source_custom", "Usage: clijudge displaylang source custom <base-url>") << std::endl;
+            return 1;
+        }
+        std::string checkErr = checkSourceUrl(customBase);
+        if (!checkErr.empty()) {
+            std::cerr << checkErr << std::endl;
+            return 1;
+        }
+        if (customBase.back() != '/') customBase += '/';
+        config["lang_source_url"] = customBase;
+    }
     config["lang_source"] = name;
     if (!saveConfig(config)) {
         std::cerr << tr("displaylang.source_save_failed", "Failed to save language source setting.") << std::endl;
         return 1;
     }
-    std::cout << trf("displaylang.source_set", "Language pack source set to: {0}", {name}) << std::endl;
+    std::string shown = name == "custom" ? "custom (" + customBase + ")" : name;
+    std::cout << trf("displaylang.source_set", "Language pack source set to: {0}", {shown}) << std::endl;
     return 0;
 }
 

@@ -238,6 +238,10 @@ Check "source persisted in config" ($srcCfg -match '"lang_source":\s*"gitee"') $
 $r = Run @("displaylang", "source", "github")
 $srcCfg = [IO.File]::ReadAllText($cfgPath)
 Check "source restore github" (($r.code -eq 0) -and ($srcCfg -match '"lang_source":\s*"github"')) $r.out
+$r = Run @("displaylang", "source", "custom")
+Check "source custom no-url usage" (($r.code -eq 1) -and ($r.out -match "Usage: clijudge displaylang source custom")) "code=$($r.code) out=$($r.out)"
+$r = Run @("displaylang", "source", "custom", "not-a-url")
+Check "source custom invalid url" (($r.code -eq 1) -and ($r.out -match "Invalid source URL: not-a-url")) "code=$($r.code) out=$($r.out)"
 
 Write-Host ""
 Write-Host "PASS: $script:pass  FAIL: $script:fail"

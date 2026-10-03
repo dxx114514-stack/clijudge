@@ -154,7 +154,7 @@ void showCommandHelp(const std::string& command) {
         std::cout << "  switch [langname]              " << clijudge::lang::tr("displaylang.switch", "Switch display language") << std::endl;
         std::cout << "  delete [langname]              " << clijudge::lang::tr("displaylang.delete", "Delete local language") << std::endl;
         std::cout << "  pull [langname]                " << clijudge::lang::tr("displaylang.pull", "Pull language (no switch)") << std::endl;
-std::cout << "  source [github|gitee]          " << clijudge::lang::tr("displaylang.source", "Language pack source") << std::endl;
+std::cout << "  source [github|gitee|custom]  " << clijudge::lang::tr("displaylang.source", "Language pack source") << std::endl;
     } else {
         showHelp();
     }
@@ -759,7 +759,7 @@ int main(int argc, char* argv[]) {
             }
             return clijudge::lang::cmdPull(argv[3]);
         } else if (subCmd == "source") {
-            return clijudge::lang::cmdSource(argc >= 4 ? argv[3] : "");
+            return clijudge::lang::cmdSource(argc >= 4 ? argv[3] : "", argc >= 5 ? argv[4] : "");
         } else {
             std::cerr << clijudge::lang::trf("err.unknown_displaylang_command", "Unknown displaylang command: {0}", {subCmd}) << std::endl;
             showCommandHelp("displaylang");

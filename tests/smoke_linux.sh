@@ -251,6 +251,10 @@ run displaylang source gitee
 grep -Eq '"lang_source": *"gitee"' "$CFG"; t "source persisted in config" $?
 run displaylang source github
 [ $CODE -eq 0 ] && grep -Eq '"lang_source": *"github"' "$CFG"; t "source restore github" $? "code=$CODE $OUT"
+run displaylang source custom
+[ $CODE -eq 1 ] && echo "$OUT" | grep -q "Usage: clijudge displaylang source custom"; t "source custom no-url usage" $? "code=$CODE $OUT"
+run displaylang source custom not-a-url
+[ $CODE -eq 1 ] && echo "$OUT" | grep -q "Invalid source URL: not-a-url"; t "source custom invalid url" $? "code=$CODE $OUT"
 
 echo ""
 echo "PASS: $pass  FAIL: $fail"
