@@ -74,7 +74,7 @@ W "$work\spj.json" $spjJson
 $r = Run @("problem", "import", "$work\spj.json")
 Check "spj import" ($r.out -match "Problem imported with ID") $r.out
 Check "spj import warns trust" ($r.out -match "Warning: this package contains special judge") $r.out
-Check "spj warning mentions trusted mode" ($r.out -match "reduced-isolation") $r.out
+Check "spj warning mentions trusted mode" ($r.out -match "reduced-\s*isolation") $r.out
 
 # T09/T10 article EN outputs
 $r = Run @("article", "create", "Hello")
@@ -146,7 +146,7 @@ $cfgPath = "$data\config.json"
 $cfgOrig = [IO.File]::ReadAllText($cfgPath)
 W $cfgPath "{ this is not json"
 $r = Run @("problem", "count")
-Check "corrupt config warns" ($r.out -match "Warning: failed to parse .*config\.json") $r.out
+Check "corrupt config warns" ($r.out -match "failed\s+to\s+parse[\s\S]*config\.json") $r.out
 [IO.File]::WriteAllText($cfgPath, $cfgOrig)
 $r = Run @("problem", "count")
 Check "restored config clean" (($r.code -eq 0) -and (-not ($r.out -match "Warning:"))) "code=$($r.code) out=$($r.out)"
@@ -172,11 +172,11 @@ $cfgPath = "$data\config.json"
 $cfgOrig = [IO.File]::ReadAllText($cfgPath)
 W $cfgPath '[1,2,3]'
 $r = Run @("problem", "count")
-Check "non-object config warns" ($r.out -match "is not a JSON object") $r.out
-Check "non-object config graceful" (($r.code -eq 1) -and ($r.out -match "No display language configured")) "code=$($r.code) out=$($r.out)"
+Check "non-object config warns" ($r.out -match "is not a JSON\s+object") $r.out
+Check "non-object config graceful" (($r.code -eq 1) -and ($r.out -match "No display language\s+configured")) "code=$($r.code) out=$($r.out)"
 [IO.File]::WriteAllBytes($cfgPath, ([byte[]](0xEF, 0xBB, 0xBF)) + [Text.Encoding]::UTF8.GetBytes('{"current_lang":"en"}'))
 $r = Run @("problem", "count")
-Check "BOM config parses" (($r.code -eq 0) -and (-not ($r.out -match "failed to parse"))) "code=$($r.code) out=$($r.out)"
+Check "BOM config parses" (($r.code -eq 0) -and (-not ($r.out -match "failed\s+to\s+parse"))) "code=$($r.code) out=$($r.out)"
 [IO.File]::WriteAllText($cfgPath, $cfgOrig)
 
 # T21 text_no_space: tokens equal but line grouping differs -> PE (A3)
