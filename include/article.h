@@ -124,11 +124,10 @@ public:
         data.push_back(article);
         saveIndex();
 
-        // 保存文章内容到单独文件
+        // 保存文章内容到单独文件 (原子写 + 失败告警; 半截文件会让 view 解析崩溃)
         ensureDataDir();
-        std::ofstream f(getArticlePath(id));
-        if (f.is_open()) {
-            f << article.dump(2);
+        if (!platform::writeFileAtomic(getArticlePath(id), article.dump(2))) {
+            std::cerr << "Warning: failed to write " << getArticlePath(id) << std::endl;
         }
 
         return id;
@@ -156,14 +155,17 @@ public:
     json view(int id) {
         for (const auto& item : data) {
             if (item.contains("id") && item["id"].get<int>() == id) {
-                // 加载完整内容
+                // 加载完整内容 (文件损坏/半截时回退到索引条目, 不 abort)
                 std::string path = getArticlePath(id);
                 if (fs::exists(path)) {
                     std::ifstream f(path);
                     if (f.is_open()) {
-                        json fullArticle;
-                        f >> fullArticle;
-                        return fullArticle;
+                        try {
+                            json fullArticle;
+                            f >> fullArticle;
+                            if (fullArticle.is_object()) return fullArticle;
+                        } catch (...) {
+                        }
                     }
                 }
                 return item;

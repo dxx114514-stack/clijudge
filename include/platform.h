@@ -55,7 +55,9 @@ inline std::string tempDir() {
 inline std::string exeDir() {
 #ifdef _WIN32
     char buf[MAX_PATH];
-    if (GetModuleFileNameA(NULL, buf, MAX_PATH)) {
+    DWORD n = GetModuleFileNameA(NULL, buf, MAX_PATH);
+    // 路径 ≥ MAX_PATH 时返回 nSize 且不写 NUL → 必须同时要求 n < MAX_PATH
+    if (n > 0 && n < MAX_PATH) {
         return fs::path(buf).parent_path().string();
     }
     return ".";

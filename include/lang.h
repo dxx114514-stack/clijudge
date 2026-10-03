@@ -293,8 +293,19 @@ inline json loadConfig() {
     if (content.empty()) {
         return json{{"current_lang", ""}};
     }
+    // 记事本另存的 UTF-8 BOM 会让 json::parse 失败 → 剥掉后再解析,
+    // 否则后续 saveConfig 会把整个文件 (含 judge 段) 覆写成只剩 current_lang
+    if (content.size() >= 3 && (unsigned char)content[0] == 0xEF &&
+        (unsigned char)content[1] == 0xBB && (unsigned char)content[2] == 0xBF)
+        content = content.substr(3);
     try {
-        return json::parse(content);
+        json j = json::parse(content);
+        if (j.is_object()) return j;
+        static bool warnedType = false;
+        if (!warnedType) {
+            warnedType = true;
+            std::cerr << "Warning: " << path << " is not a JSON object; using defaults." << std::endl;
+        }
     } catch (...) {
         // 损坏的 config.json 静默回退会让用户困惑，明确告警一次
         static bool warned = false;
@@ -302,8 +313,8 @@ inline json loadConfig() {
             warned = true;
             std::cerr << "Warning: failed to parse " << path << " (invalid JSON); using defaults." << std::endl;
         }
-        return json{{"current_lang", ""}};
     }
+    return json{{"current_lang", ""}};
 }
 
 // 保存配置（原子写，防崩溃留下半截 config.json）
@@ -414,6 +425,19 @@ inline std::string httpGet(const std::string& url) {
         WinHttpCloseHandle(hSession);
         return "";
     }
+
+    // 校验 HTTP 状态码: 否则 404 的响应体会被当成语言包/列表内容保存 (Linux 侧 curl -f 同语义)
+    DWORD statusCode = 0, statusSize = sizeof(statusCode);
+    if (!WinHttpQueryHeaders(hRequest,
+                             WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                             WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusSize,
+                             WINHTTP_NO_HEADER_INDEX) ||
+        statusCode < 200 || statusCode >= 300) {
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return "";
+    }
     
     // 读取响应
     std::string response;
@@ -505,6 +529,16 @@ inline bool downloadLang(const std::string& langName, bool* usedBuiltin = nullpt
     }
     
     std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
+    // 落盘前校验内容是合法 JSON 对象: 拦截错误页/HTML/非语言包内容
+    // (Windows 404 之前不查状态码; 即使 200 也可能是代理返回的 HTML)
+    try {
+        json probe = json::parse(content);
+        if (!probe.is_object()) throw std::runtime_error("not an object");
+    } catch (...) {
+        std::cerr << "Failed to download language file: " << langName
+                  << " (response is not a valid language pack)" << std::endl;
+        return false;
+    }
     if (!writeFile(path, content)) {
         std::cerr << "Failed to save language file: " << langName << std::endl;
         return false;

@@ -71,6 +71,7 @@ inline void writeMeta(const char* path, int exitCode, unsigned long timeMs,
 #include <string.h>
 #include <string>
 #include <vector>
+#include <map>
 #include <mutex>
 #include <algorithm>
 #include <cctype>
@@ -289,6 +290,8 @@ inline std::wstring baseNameW(const std::wstring& p) {
 
 // ── 写元数据 JSON 到文件 ──────────────────────────────────
 // 递归删除目录树（用于清理被恶意创建的目录型 _meta.json）
+// 遇到 junction/符号链接只删链接本身, 绝不跟随 — 选手可在可写 cwd 里预置
+// _meta.json junction 指向任意目录, 跟随会把目标目录树删空。
 inline void deleteTreeW(const wchar_t* root) {
     std::wstring pat = std::wstring(root) + L"\\*";
     WIN32_FIND_DATAW fd;
@@ -297,6 +300,11 @@ inline void deleteTreeW(const wchar_t* root) {
         do {
             if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
             std::wstring sub = std::wstring(root) + L"\\" + fd.cFileName;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) RemoveDirectoryW(sub.c_str());
+                else DeleteFileW(sub.c_str());
+                continue;
+            }
             if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
                 deleteTreeW(sub.c_str());
             else
@@ -310,10 +318,17 @@ inline void deleteTreeW(const wchar_t* root) {
 // 写入元数据前确保 metaFile 不是目录。
 // 恶意提交可在 workDir 内预创建名为 _meta.json 的目录，导致 fopen("w") 失败、
 // 元数据丢失（executor 读不到 meta → 回退到进程退出码，判题信息失真）。
+// 目录型 _meta.json 还可能是 junction → 只删链接本身, 不递归跟随 (见 deleteTreeW)。
 inline void ensureMetaPath(const char* path) {
     std::wstring wp = utf8ToWide(path);
     DWORD attr = GetFileAttributesW(wp.c_str());
-    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+    if (attr == INVALID_FILE_ATTRIBUTES) return;
+    if (attr & FILE_ATTRIBUTE_REPARSE_POINT) {
+        if (attr & FILE_ATTRIBUTE_DIRECTORY) RemoveDirectoryW(wp.c_str());
+        else DeleteFileW(wp.c_str());
+        return;
+    }
+    if (attr & FILE_ATTRIBUTE_DIRECTORY)
         deleteTreeW(wp.c_str());
 }
 
@@ -356,6 +371,7 @@ inline void setLowLabelRecursive(const wchar_t* root) {
         do {
             if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
             std::wstring sub = std::wstring(root) + L"\\" + fd.cFileName;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue; // 不跟随链接
             if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
                 setLowLabelRecursive(sub.c_str());
             else
@@ -366,7 +382,10 @@ inline void setLowLabelRecursive(const wchar_t* root) {
 }
 
 // ── 创建 Job Object 并设置安全限制 ─────────────────────────
-inline HANDLE createJob(DWORD timeLimitMs, SIZE_T memLimitBytes, DWORD maxProcs) {
+// cpuLimitMs: 累计 CPU 时间硬限 (0 = 不限)。启用 JOB_OBJECT_LIMIT_JOB_TIME 后
+// Job 到时由系统终止整棵进程树 (对齐 Linux RLIMIT_CPU 语义)。按 RLIMIT_CPU 同款
+// 公式放宽到 ceil(ms/1000)+1 秒 — 软墙钟限额由轮询判定, 此处只兜底 CPU 失控。
+inline HANDLE createJob(DWORD timeLimitMs, SIZE_T memLimitBytes, DWORD maxProcs, DWORD cpuLimitMs) {
     HANDLE hJob = CreateJobObjectA(NULL, NULL);
     if (!hJob) return NULL;
 
@@ -379,8 +398,10 @@ inline HANDLE createJob(DWORD timeLimitMs, SIZE_T memLimitBytes, DWORD maxProcs)
 
     jeli.BasicLimitInformation.ActiveProcessLimit = maxProcs;
 
-    if (timeLimitMs > 0)
-        jeli.BasicLimitInformation.PerJobUserTimeLimit.QuadPart = (ULONGLONG)timeLimitMs * 10000;
+    if (cpuLimitMs > 0) {
+        jeli.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_JOB_TIME;
+        jeli.BasicLimitInformation.PerJobUserTimeLimit.QuadPart = (LONGLONG)cpuLimitMs * 10000;
+    }
 
     if (memLimitBytes > 0) {
         jeli.ProcessMemoryLimit = memLimitBytes;
@@ -435,6 +456,69 @@ struct SandboxStdio {
 inline std::mutex& spawnMutex() {
     static std::mutex m;
     return m;
+}
+
+// ── E1: 工作目录文件基线 (Windows 无 RLIMIT_FSIZE, 快照+轮询模拟) ──
+// 基线在 ResumeThread 前采集; 只把子进程新写/改写且单文件超限的记为
+// OUTPUT_LIMIT — 预置测试数据与元数据不计 (对齐 Linux "只算被限制进程
+// 自己写出的文件" 语义)。范围仅 workingDir (RLIMIT_FSIZE 同样不约束
+// 子进程在其它路径的写入)。
+struct FileSnap {
+    ULONGLONG mtime;
+    ULONGLONG size;
+};
+inline void snapshotTreeW(const std::wstring& root, std::map<std::wstring, FileSnap>& out) {
+    if (root.empty()) return;
+    std::wstring pat = root + L"\\*";
+    WIN32_FIND_DATAW fd;
+    HANDLE hFind = FindFirstFileW(pat.c_str(), &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+    do {
+        if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
+        std::wstring sub = root + L"\\" + fd.cFileName;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue; // 不跟随链接
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            snapshotTreeW(sub, out);
+        } else {
+            ULARGE_INTEGER mt, sz;
+            mt.LowPart = fd.ftLastWriteTime.dwLowDateTime;
+            mt.HighPart = fd.ftLastWriteTime.dwHighDateTime;
+            sz.LowPart = fd.nFileSizeLow;
+            sz.HighPart = fd.nFileSizeHigh;
+            out[sub] = { mt.QuadPart, sz.QuadPart };
+        }
+    } while (FindNextFileW(hFind, &fd));
+    FindClose(hFind);
+}
+// 存在于基线且 mtime+size 均未变 → 保留件不计; 新写/改写件超过 limit → 超限
+inline bool treeLimitExceededW(const std::wstring& root, size_t limit,
+                               const std::map<std::wstring, FileSnap>& base) {
+    if (root.empty() || limit == 0) return false;
+    std::wstring pat = root + L"\\*";
+    WIN32_FIND_DATAW fd;
+    HANDLE hFind = FindFirstFileW(pat.c_str(), &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return false;
+    bool exceeded = false;
+    do {
+        if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
+        std::wstring sub = root + L"\\" + fd.cFileName;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (treeLimitExceededW(sub, limit, base)) { exceeded = true; break; }
+        } else {
+            ULARGE_INTEGER mt, sz;
+            mt.LowPart = fd.ftLastWriteTime.dwLowDateTime;
+            mt.HighPart = fd.ftLastWriteTime.dwHighDateTime;
+            sz.LowPart = fd.nFileSizeLow;
+            sz.HighPart = fd.nFileSizeHigh;
+            auto it = base.find(sub);
+            bool preserved = (it != base.end() && it->second.mtime == mt.QuadPart &&
+                              it->second.size == sz.QuadPart);
+            if (!preserved && sz.QuadPart > (ULONGLONG)limit) { exceeded = true; break; }
+        }
+    } while (FindNextFileW(hFind, &fd));
+    FindClose(hFind);
+    return exceeded;
 }
 
 // ── 主运行函数 ─────────────────────────────────────────────
@@ -505,7 +589,10 @@ inline SandboxResult sandbox_run(
     // Job 硬限制 (阻止分配) 放宽到 4 倍, 让峰值指标能越过 1 倍阈值被轮询捕获,
     // 否则分配在到达阈值前即被拒绝, 优雅处理分配失败的程序会被误判为正常退出。
     SIZE_T jobMemLimit = memLimitBytes > 0 ? memLimitBytes * 4 : 0;
-    HANDLE hJob = createJob(timeLimitMs, jobMemLimit, maxProcesses);
+    // CPU 硬限: 对齐 Linux RLIMIT_CPU 公式 (ceil(ms/1000)+1 秒); 墙钟仍按 timeLimitMs 轮询
+    const DWORD cpuLimitMs =
+        timeLimitMs > 0 ? ((timeLimitMs + 999) / 1000 + 1) * 1000 : 0;
+    HANDLE hJob = createJob(timeLimitMs, jobMemLimit, maxProcesses, cpuLimitMs);
     if (!hJob) {
         writeMeta(metaFile, -1, 0, 0, "SYSTEM_ERROR");
         return result;
@@ -538,6 +625,9 @@ inline SandboxResult sandbox_run(
 
     // 显式 stdio：spawn 窗口内持锁，打开文件/临时开启继承 → CreateProcess → 立即清理
     bool explicitIo = (io != nullptr && !io->inherit);
+    // E2: 指定的 stdio 路径打不开 (磁盘满/权限/路径被预置占位) 时禁止带残缺句柄
+    // 起进程 — 子进程 stdout 落空会让评测结果不可信, 直接 fail-closed。
+    bool stdioFailed = false;
     const char* workingDirPtr = NULL;
     HANDLE hIn = NULL, hOut = NULL, hErr = NULL;
     HANDLE opened[3] = { NULL, NULL, NULL };
@@ -549,11 +639,11 @@ inline SandboxResult sandbox_run(
         saIo.nLength = sizeof(saIo);
         saIo.bInheritHandle = TRUE;
         if (io->hStdin) { hIn = io->hStdin; providedInherit[0] = true; SetHandleInformation(hIn, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT); }
-        else if (!io->stdinPath.empty()) { hIn = opened[0] = CreateFileA(io->stdinPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &saIo, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL); if (hIn == INVALID_HANDLE_VALUE) hIn = NULL, opened[0] = NULL; }
+        else if (!io->stdinPath.empty()) { hIn = opened[0] = CreateFileA(io->stdinPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &saIo, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL); if (hIn == INVALID_HANDLE_VALUE) hIn = NULL, opened[0] = NULL, stdioFailed = true; }
         if (io->hStdout) { hOut = io->hStdout; providedInherit[1] = true; SetHandleInformation(hOut, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT); }
-        else if (!io->stdoutPath.empty()) { hOut = opened[1] = CreateFileA(io->stdoutPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &saIo, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); if (hOut == INVALID_HANDLE_VALUE) hOut = NULL, opened[1] = NULL; }
+        else if (!io->stdoutPath.empty()) { hOut = opened[1] = CreateFileA(io->stdoutPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &saIo, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); if (hOut == INVALID_HANDLE_VALUE) hOut = NULL, opened[1] = NULL, stdioFailed = true; }
         if (io->hStderr) { hErr = io->hStderr; providedInherit[2] = true; SetHandleInformation(hErr, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT); }
-        else if (!io->stderrPath.empty()) { hErr = opened[2] = CreateFileA(io->stderrPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &saIo, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); if (hErr == INVALID_HANDLE_VALUE) hErr = NULL, opened[2] = NULL; }
+        else if (!io->stderrPath.empty()) { hErr = opened[2] = CreateFileA(io->stderrPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &saIo, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); if (hErr == INVALID_HANDLE_VALUE) hErr = NULL, opened[2] = NULL, stdioFailed = true; }
         si.hStdInput = hIn;
         si.hStdOutput = hOut;
         si.hStdError = hErr;
@@ -580,8 +670,11 @@ inline SandboxResult sandbox_run(
 
     BOOL ok = FALSE;
 
-    // 受限令牌路径; 可信运行使用普通 CreateProcess (同 LemonLime 编译行为)
-    if (hRestricted) {
+    // 受限令牌路径; 可信运行使用普通 CreateProcess (同 LemonLime 编译行为);
+    // stdio 打开失败 → 跳过创建, 落到下方 fail-closed SYSTEM_ERROR
+    if (stdioFailed) {
+        ok = FALSE;
+    } else if (hRestricted) {
         ok = CreateProcessAsUserA(hRestricted, NULL, cmdBuf.data(), &sa, &sa, TRUE, flags, lpEnv, workingDirPtr, &si, &pi);
     } else if (trusted) {
         ok = CreateProcessA(NULL, cmdBuf.data(), &sa, &sa, TRUE, flags, lpEnv, workingDirPtr, &si, &pi);
@@ -628,6 +721,14 @@ inline SandboxResult sandbox_run(
         return result;
     }
 
+    // 4b. E1: ResumeThread 前取工作目录文件基线 (子进程起来之前的最后时点;
+    // 此时 stdin/stdout/stderr 已按显式 IO 打开、Low-IL 标签已设, 均计入保留件)
+    const bool trackFiles = (outputLimitBytes > 0 && !workingDir.empty());
+    std::map<std::wstring, FileSnap> fileSnap;
+    std::wstring trackDirW = utf8ToWide(workingDir.c_str());
+    int treeTick = 0;
+    if (trackFiles) snapshotTreeW(trackDirW, fileSnap);
+
     // 5. 唤醒主线程 — 进程开始执行
     ResumeThread(pi.hThread);
 
@@ -667,6 +768,12 @@ inline SandboxResult sandbox_run(
                 CloseHandle(hF);
             }
         }
+        // E1: 工作目录内新写/改写文件单文件超限（每 4 拍 ≈ 200ms 查一次）
+        if (trackFiles && (++treeTick % 4 == 0) &&
+            treeLimitExceededW(trackDirW, outputLimitBytes, fileSnap)) {
+            outLimited = true;
+            break;
+        }
     }
 
     DWORD timeUsed = GetTickCount() - startTime;
@@ -697,8 +804,24 @@ inline SandboxResult sandbox_run(
             outLimited = true;
     }
 
+    // E1: 进程自行退出前最后一笔写入的补判 (轮询间隙)
+    if (!oom && !timeout && !outLimited && trackFiles &&
+        treeLimitExceededW(trackDirW, outputLimitBytes, fileSnap))
+        outLimited = true;
+
     DWORD exitCode = 0;
     GetExitCodeProcess(pi.hProcess, &exitCode);
+
+    // B2: 进程自行退出且非其他限额 → 查 Job 累计 CPU 时间补判 TLE。
+    // JOB_OBJECT_LIMIT_JOB_TIME 到限时系统终止整棵进程树 (退出码非 0);
+    // 段错误等自发崩溃的 TotalUserTime 远小于阈值, 不会误判成超时。
+    if (!oom && !timeout && !outLimited && cpuLimitMs > 0 && exitCode != 0) {
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION jba = {};
+        if (QueryInformationJobObject(hJob, JobObjectBasicAccountingInformation,
+                                      &jba, sizeof(jba), NULL) &&
+            jba.TotalUserTime.QuadPart >= (LONGLONG)cpuLimitMs * 10000)
+            timeout = true;
+    }
 
     const char* signal = "null";
     if (oom) signal = "MEMORY_LIMIT";
@@ -1071,7 +1194,8 @@ struct LinuxChildCtx {
 //   4. 环境: 最小白名单 (buildMinEnv, 语义对齐 Windows) + extraEnv。
 //   5. maxProcesses: untrusted 且上限为 1 时 seccomp 拒绝创建进程 (对齐
 //      ActiveProcessLimit=1: 进程创建失败而线程不受限); 其余场景父进程轮询
-//      进程组计数, 超限即整组 SIGKILL (meta 信号 SIGKILL → 上层判 TLE)。
+//      进程组计数, 超限即整组 SIGKILL 且 meta 信号写 PROC_LIMIT → 上层判 RE
+//      (与 TLE 区分; Windows 侧由 ActiveProcessLimit 拦在创建时, 无此分支)。
 //   6. seccomp 黑名单: mount/ptrace/... → SIGSYS; clone3/io_uring/bpf → ENOSYS;
 //      非 x86_64 架构放行 (兼容 -m32)。
 // io/workingDir/extraEnv/outputLimitBytes/trusted: 语义与 Windows 分支一致。
@@ -1143,6 +1267,9 @@ inline SandboxResult sandbox_run(
 #else
     denyProcessCreate = false; // 非 x86_64 无过滤器规则 → 退回轮询计数
 #endif
+    // B3: seccomp 不可用 (探测失败/非 x86_64) 时必须退回轮询计数 —
+    // 否则 denyProcessCreate 挂起而过滤器没装, 进程数完全不受限。
+    if (!ctx.applySeccomp) denyProcessCreate = false;
 
     static const int kLevelFlags[3] = {
         CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWNET |
@@ -1387,7 +1514,8 @@ inline SandboxResult sandbox_run(
 
     const char* signal = "null";
     if (oom) signal = "MEMORY_LIMIT";
-    else if (timedOut || procLimited) signal = "SIGKILL";
+    else if (timedOut) signal = "SIGKILL";
+    else if (procLimited) signal = "PROC_LIMIT";
     else if (outLimited) signal = "OUTPUT_LIMIT";
 
     writeMeta(metaFile, exitCode, timeUsed, peakKB, signal);

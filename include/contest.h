@@ -315,11 +315,15 @@ public:
             problemJson["problem"]["title"] = task.problemTitle;
             problemJson["problem"]["time_limit"] = task.testCases.empty() ? 1000 : task.testCases[0].timeLimit;
             problemJson["problem"]["memory_limit"] = task.testCases.empty() ? 256 : task.testCases[0].memoryLimit;
-            problemJson["problem"]["compare_mode"] = clijudge::cdf::comparisonModeToCliJudge(task.comparisonMode);
+            // 往返保留: 导出侧写入的 compareModeCliJudge/spjCode/float* 字段优先,
+            // 否则回退到 Lemon 标准字段的映射 (第三方 CDF)
+            problemJson["problem"]["compare_mode"] = !task.compareModeCliJudge.empty()
+                ? task.compareModeCliJudge
+                : clijudge::cdf::comparisonModeToCliJudge(task.comparisonMode);
             problemJson["problem"]["problem_type"] = clijudge::cdf::taskTypeToCliJudge(task.taskType);
             problemJson["problem"]["is_public"] = true;
             problemJson["problem"]["is_hidden"] = false;
-            problemJson["problem"]["spj_code"] = "";
+            problemJson["problem"]["spj_code"] = task.spjCode;
             problemJson["problem"]["special_judge_exe"] = task.specialJudge;
             problemJson["problem"]["allowed_languages"] = json::array();
             // Lemon 每个 testcase = 一个子任务, 多文件取 min (等价 all_or_nothing)
@@ -334,7 +338,11 @@ public:
             problemJson["problem"]["sample_input"] = "";
             problemJson["problem"]["sample_output"] = "";
 
-            if (task.comparisonMode == 3) {
+            if (task.hasFloatTol) {
+                // 往返保留导出侧的精确 abs/rel 容差
+                problemJson["problem"]["float_abs_tolerance"] = task.floatAbsTol;
+                problemJson["problem"]["float_rel_tolerance"] = task.floatRelTol;
+            } else if (task.comparisonMode == 3) {
                 // RealNumber: eps = 10^-realPrecision, abs 与 rel 同用
                 double eps = std::pow(10.0, -(double)(task.realPrecision > 0 ? task.realPrecision : 6));
                 problemJson["problem"]["float_abs_tolerance"] = eps;
@@ -415,8 +423,9 @@ public:
                     json tcJson;
                     tcJson["id"] = ++cliIdx;
                     tcJson["score"] = tc.fullScore;
-                    tcJson["time_limit"] = -1;
-                    tcJson["memory_limit"] = -1;
+                    // 逐测试点时限/内存 (与导出侧对称); <=0 → -1 表示回退题目默认
+                    tcJson["time_limit"] = tc.timeLimit > 0 ? tc.timeLimit : -1;
+                    tcJson["memory_limit"] = tc.memoryLimit > 0 ? tc.memoryLimit : -1;
                     tcJson["sort_order"] = cliIdx;
                     tcJson["input_file"] = "";
                     tcJson["output_file"] = "";
@@ -519,13 +528,20 @@ public:
                 task["standardOutputCheck"] = true;
                 task["taskType"] = clijudge::cdf::cliJudgeToTaskType(pType);
                 task["subFolderCheck"] = false;
-                task["comparisonMode"] =
-                    clijudge::cdf::cliJudgeToComparisonMode(p.value("compare_mode", "text_strict"));
+                std::string cjMode = p.value("compare_mode", "text_strict");
+                task["comparisonMode"] = clijudge::cdf::cliJudgeToComparisonMode(cjMode);
+                // CliJudge 扩展字段: 往返保留精确 compare_mode / spj_code / 容差
+                task["compareModeCliJudge"] = cjMode;
+                task["spjCode"] = p.value("spj_code", "");
                 task["diffArguments"] = "--ignore-space-change --text --brief";
                 double ftol = p.value("float_abs_tolerance", 0.0);
+                double rtol = p.value("float_rel_tolerance", 0.0);
+                task["floatAbsTol"] = ftol;
+                task["floatRelTol"] = rtol;
                 int realPrecision = 3;
-                if (ftol > 0.0) {
-                    int e = (int)std::lround(-std::log10(ftol));
+                double ptol = ftol > 0.0 ? ftol : rtol;  // abs 缺失时按 rel 推导 (Lemon 单值精度)
+                if (ptol > 0.0) {
+                    int e = (int)std::lround(-std::log10(ptol));
                     if (e >= 0 && e <= 15) realPrecision = e;
                 }
                 task["realPrecision"] = realPrecision;
@@ -673,8 +689,10 @@ public:
             const auto& problemIds = contest["problem_ids"];
             int numProblems = (int)problemIds.size();
 
-            // 收集所有提交
+            // 收集所有提交; 总分按 (选手, 题目) 取最优一次计入 (与 reportHtml 一致),
+            // 同分时优先取 AC 条目; total 为提交次数
             std::map<std::string, json> userStats;
+            std::map<std::string, std::map<int, std::pair<int, bool>>> best; // user -> pIdx -> {bestScore, isAC}
             for (int i = 1; i <= numProblems; i++) {
                 json submissions = viewProblemSubmissions(contestId, i);
                 if (!submissions.is_array()) continue;
@@ -691,13 +709,24 @@ public:
                     userStats[user]["total"] = userStats[user]["total"].get<int>() + 1;
                     std::string result = sub.value("result", "");
                     int score = sub.value("score", 0);
-                    if (result == "AC" || result == "accepted") {
-                        userStats[user]["score"] = userStats[user]["score"].get<int>() + score;
-                        userStats[user]["accepted"] = userStats[user]["accepted"].get<int>() + 1;
-                    } else {
-                        userStats[user]["score"] = userStats[user]["score"].get<int>() + score;
+                    bool isAC = (result == "AC" || result == "accepted");
+                    auto& slot = best[user][i];
+                    if (score > slot.first || (score == slot.first && isAC && !slot.second)) {
+                        slot.first = score;
+                        slot.second = isAC;
                     }
                 }
+            }
+
+            // 按最优条目汇总
+            for (auto& [user, st] : userStats) {
+                int totalScore = 0, accepted = 0;
+                for (auto& [pIdx, slot] : best[user]) {
+                    totalScore += slot.first;
+                    if (slot.second) accepted++;
+                }
+                st["score"] = totalScore;
+                st["accepted"] = accepted;
             }
 
             // 转为数组并排序

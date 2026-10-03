@@ -366,20 +366,13 @@ inline CompareResult compareIgnoreSpace(const std::string& expected, const std::
         return mkCompare(JudgeStatus::WRONG_ANSWER, 0, "Wrong Answer: less contents");
     if (a.size() > e.size())
         return mkCompare(JudgeStatus::OUTPUT_LIMIT_EXCEEDED, 0, "Output Limit Exceeded: too much contents");
-    // token 全等但含 token 的行数不同 → 行结构差异
-    auto countLines = [](const std::vector<TokenWithLine>& v) {
-        int lines = 0;
-        int prev = -1;
-        for (const auto& t : v) {
-            if (t.line != prev) {
-                lines++;
-                prev = t.line;
-            }
-        }
-        return lines;
-    };
-    if (countLines(e) != countLines(a))
-        return mkCompare(JudgeStatus::PRESENTATION_ERROR, 0, "Presentation Error: unexpected end of line");
+    // token 全等但行分组不同 → PE: 逐 token 比较所在行 (只数含 token 的行数会漏掉
+    // "1\n2 3" 与 "1 2\n3" 这类同行数不同分组的差异)
+    for (size_t i = 0; i < e.size(); i++) {
+        if (e[i].line != a[i].line)
+            return mkCompare(JudgeStatus::PRESENTATION_ERROR, 0,
+                             "Presentation Error: unexpected end of line");
+    }
     return mkCompare(JudgeStatus::ACCEPTED, maxScore, "Correct");
 }
 
@@ -552,7 +545,10 @@ inline CompileResult compileCustomLanguage(const settings::CustomLanguage& lang,
     std::string errFile = platform::pathJoin(workDir, "_cc_stderr.txt");
     std::string metaFile = platform::pathJoin(workDir, "_cc_meta.json");
     std::string inDummy = platform::pathJoin(workDir, "_cc_stdin.txt");
-    writeFileContent(inDummy, "");
+    if (!writeFileContent(inDummy, "")) {
+        result.error = "System Error: cannot write compile input file";
+        return result;
+    }
 
     SandboxStdio io;
     io.inherit = false;
@@ -589,6 +585,11 @@ inline CompileResult compileCustomLanguage(const settings::CustomLanguage& lang,
     if (signal == "SIGKILL") {
         result.error = "Compilation Time Limit Exceeded";
         std::cerr << "[compile] time limit exceeded" << std::endl;
+        return result;
+    }
+    if (signal == "PROC_LIMIT") {
+        result.error = "Compilation failed: process limit exceeded";
+        std::cerr << "[compile] process limit exceeded" << std::endl;
         return result;
     }
     if (signal == "SYSTEM_ERROR") {
@@ -703,7 +704,10 @@ inline CompileResult compileSources(const std::vector<std::string>& sources,
     std::string errFile = platform::pathJoin(ioDir, "_cc_stderr.txt");
     std::string metaFile = platform::pathJoin(ioDir, "_cc_meta.json");
     std::string inDummy = platform::pathJoin(ioDir, "_cc_stdin.txt");
-    writeFileContent(inDummy, "");
+    if (!writeFileContent(inDummy, "")) {
+        result.error = "System Error: cannot write compile input file";
+        return result;
+    }
 
     SandboxStdio io;
     io.inherit = false;
@@ -742,6 +746,11 @@ inline CompileResult compileSources(const std::vector<std::string>& sources,
     if (signal == "SIGKILL") {
         result.error = "Compilation Time Limit Exceeded";
         std::cerr << "[compile] time limit exceeded" << std::endl;
+        return result;
+    }
+    if (signal == "PROC_LIMIT") {
+        result.error = "Compilation failed: process limit exceeded";
+        std::cerr << "[compile] process limit exceeded" << std::endl;
         return result;
     }
     if (signal == "SYSTEM_ERROR") {
@@ -793,7 +802,10 @@ inline CompileResult compileSpecialJudge(const json& problem, const std::string&
     }
     if (!spjCode.empty()) {
         std::string src = platform::pathJoin(workDir, "spj_check.cpp");
-        writeFileContent(src, spjCode);
+        if (!writeFileContent(src, spjCode)) {
+            result.error = "System Error: cannot write special judge source";
+            return result;
+        }
         return compileSources({src}, workDir, "spj_check");
     }
     if (!spjExe.empty()) {
@@ -813,14 +825,17 @@ inline CompileResult compileSpecialJudge(const json& problem, const std::string&
 }
 
 // ── ZIP 解压 (answers_only 作答包) ───────────────────────────
+// 任一条目读取/建目录/写文件失败 → 返回 false (调用方判 SYSTEM_ERROR),
+// 绝不能吞掉错误继续: 否则作答包部分丢失会被当成"选手答案为空"误判 WA
 inline bool extractZipToDir(const std::string& zipPath, const std::string& destDir) {
     mz_zip_archive zip;
     std::memset(&zip, 0, sizeof(zip));
     if (!mz_zip_reader_init_file(&zip, zipPath.c_str(), 0)) return false;
+    bool ok = true;
     int n = (int)mz_zip_reader_get_num_files(&zip);
     for (int i = 0; i < n; i++) {
         mz_zip_archive_file_stat st;
-        if (!mz_zip_reader_file_stat(&zip, i, &st)) continue;
+        if (!mz_zip_reader_file_stat(&zip, i, &st)) { ok = false; continue; }
         if (mz_zip_reader_is_file_a_directory(&zip, i)) continue;
         std::string name = st.m_filename;
         std::replace(name.begin(), name.end(), '\\', '/');
@@ -828,18 +843,24 @@ inline bool extractZipToDir(const std::string& zipPath, const std::string& destD
             name.find("..") != std::string::npos) continue;
         size_t sz = 0;
         void* data = mz_zip_reader_extract_to_heap(&zip, i, &sz, 0);
-        if (!data) continue;
+        if (!data) { ok = false; continue; }
         std::error_code ec;
         fs::path out = fs::path(destDir) / name;
         fs::create_directories(out.parent_path(), ec);
+        if (ec) { mz_free(data); ok = false; continue; }
         {
             std::ofstream f(out, std::ios::binary);
-            if (f.is_open()) f.write((const char*)data, (std::streamsize)sz);
+            if (!f.is_open()) {
+                ok = false;
+            } else {
+                f.write((const char*)data, (std::streamsize)sz);
+                if (!f.good()) ok = false;
+            }
         }
         mz_free(data);
     }
     mz_zip_reader_end(&zip);
-    return true;
+    return ok;
 }
 
 // ── 运行选手程序 ─────────────────────────────────────────────
@@ -895,6 +916,11 @@ inline RunOutcome readRunOutcome(const std::string& metaFile,
     if (signal == "MEMORY_LIMIT") {
         out.status = JudgeStatus::MEMORY_LIMIT_EXCEEDED;
         out.message = "Memory Limit Exceeded";
+    } else if (signal == "PROC_LIMIT") {
+        // 进程数超限 (沙箱轮询杀进程组), 不是超时 — 原因是选手代码 fork 了子进程
+        out.status = JudgeStatus::RUNTIME_ERROR;
+        out.message = "Runtime Error: process limit exceeded";
+        if (!out.error.empty()) out.message += "\n" + trimTail(out.error, 1000);
     } else if (signal == "SIGKILL") {
         out.status = JudgeStatus::TIME_LIMIT_EXCEEDED;
         out.message = "Time Limit Exceeded";
@@ -937,7 +963,12 @@ inline RunOutcome runProgram(const std::string& exePath,
     std::string errFile = platform::pathJoin(ioDir, "_stderr.txt");
     std::string metaFile = platform::pathJoin(ioDir, "_meta.json");
     fs::remove(metaFile);
-    writeFileContent(inFile, inputData);
+    if (!writeFileContent(inFile, inputData)) {
+        RunOutcome fail;
+        fail.status = JudgeStatus::SYSTEM_ERROR;
+        fail.message = "System Error: cannot write stdin file";
+        return fail;
+    }
 
     SandboxStdio io;
     io.inherit = false;
@@ -1093,7 +1124,9 @@ inline CompareResult runSpecialJudge(const std::string& spjExe,
     fs::remove(metaFile);
     fs::remove(scoreFile);
     fs::remove(msgFile);
-    writeFileContent(inDummy, "");
+    if (!writeFileContent(inDummy, ""))
+        return mkCompare(JudgeStatus::SYSTEM_ERROR, 0,
+                         "System Error: cannot write special judge stdin");
 
     std::vector<std::string> args;
     if (mode == "spj_lemon") {
@@ -1135,6 +1168,9 @@ inline CompareResult runSpecialJudge(const std::string& spjExe,
 
     if (signal == "SIGKILL")
         return mkCompare(JudgeStatus::SPECIAL_JUDGE_TLE, 0, "Special Judge Time Limit Exceeded");
+    if (signal == "PROC_LIMIT")
+        return mkCompare(JudgeStatus::SPECIAL_JUDGE_RE, 0,
+                         "Special Judge Runtime Error (process limit exceeded)");
     if (signal == "MEMORY_LIMIT" || signal == "OUTPUT_LIMIT")
         return mkCompare(JudgeStatus::SPECIAL_JUDGE_RE, 0, "Special Judge Runtime Error");
     if (signal == "SYSTEM_ERROR")
@@ -1211,8 +1247,11 @@ inline TestCaseResult judgeTestCase(int tcId, int maxScore,
     std::string inputPath = platform::pathJoin(ioDir, "test_input.txt");
     std::string expectedPath = platform::pathJoin(ioDir, "test_expected.txt");
     std::string actualPath = platform::pathJoin(ioDir, "_stdout.txt");
-    writeFileContent(inputPath, inputData);
-    writeFileContent(expectedPath, expectedOutput);
+    if (!writeFileContent(inputPath, inputData) ||
+        !writeFileContent(expectedPath, expectedOutput)) {
+        result.message = "System Error: cannot write test data files";
+        return result;
+    }
 
     // 裸命令名 (python3/java/node) 无路径分隔符, 由执行层 PATH 解析, 此处无法 exists
     bool hasPathSep = ctx.exePath.find_first_of("/\\") != std::string::npos;
@@ -1320,8 +1359,11 @@ inline TestCaseResult judgeAnswersOnly(int tcId, int maxScore, const json& tc,
     std::string expected = tc.value("output_data", "");
     std::string inputPath = platform::pathJoin(ioDir, "test_input.txt");
     std::string expectedPath = platform::pathJoin(ioDir, "test_expected.txt");
-    writeFileContent(inputPath, tc.value("input_data", ""));
-    writeFileContent(expectedPath, expected);
+    if (!writeFileContent(inputPath, tc.value("input_data", "")) ||
+        !writeFileContent(expectedPath, expected)) {
+        r.message = "System Error: cannot write test data files";
+        return r;
+    }
 
     CompareResult cr;
     if (isSpecialJudgeMode(compareMode)) {
@@ -1384,7 +1426,15 @@ inline DualOutcome runDualProcess(const std::string& contestantExe,
     saN.nLength = sizeof(saN);
     saN.bInheritHandle = FALSE;  // 只在各自 spawn 窗口内临时开启所需端
     HANDLE c2iR = NULL, c2iW = NULL, i2cR = NULL, i2cW = NULL;
-    if (!CreatePipe(&c2iR, &c2iW, &saN, 0) || !CreatePipe(&i2cR, &i2cW, &saN, 0)) {
+    if (!CreatePipe(&c2iR, &c2iW, &saN, 0)) {
+        d.contestant.status = JudgeStatus::SYSTEM_ERROR;
+        d.contestant.message = "System Error: pipe creation failed";
+        d.graderMetaStatus = JudgeStatus::SYSTEM_ERROR;
+        return d;
+    }
+    if (!CreatePipe(&i2cR, &i2cW, &saN, 0)) {
+        // 第二个管道失败: 先关掉第一个, 避免泄漏 (原 || 短路直接 return)
+        CloseHandle(c2iR); CloseHandle(c2iW); c2iR = NULL; c2iW = NULL;
         d.contestant.status = JudgeStatus::SYSTEM_ERROR;
         d.contestant.message = "System Error: pipe creation failed";
         d.graderMetaStatus = JudgeStatus::SYSTEM_ERROR;
@@ -1408,7 +1458,17 @@ inline DualOutcome runDualProcess(const std::string& contestantExe,
     };
 #else
     int c2i[2] = { -1, -1 }, i2c[2] = { -1, -1 };
-    if (pipe(c2i) != 0 || pipe(i2c) != 0) {
+    if (pipe(c2i) != 0) {
+        d.contestant.status = JudgeStatus::SYSTEM_ERROR;
+        d.contestant.message = "System Error: pipe creation failed";
+        d.graderMetaStatus = JudgeStatus::SYSTEM_ERROR;
+        return d;
+    }
+    if (pipe(i2c) != 0) {
+        // 第二个管道失败: 先关掉第一个, 避免泄漏 (原 || 短路直接 return)
+        if (c2i[0] >= 0) ::close(c2i[0]);
+        if (c2i[1] >= 0) ::close(c2i[1]);
+        c2i[0] = c2i[1] = -1;
         d.contestant.status = JudgeStatus::SYSTEM_ERROR;
         d.contestant.message = "System Error: pipe creation failed";
         d.graderMetaStatus = JudgeStatus::SYSTEM_ERROR;
@@ -1473,6 +1533,8 @@ inline DualOutcome runDualProcess(const std::string& contestantExe,
         d.graderExitCode = gm.value("exit_code", 0);
         d.graderTimeUsedMs = gm.value("time_used", 0);
         if (gSignal == "SIGKILL") d.graderMetaStatus = JudgeStatus::SPECIAL_JUDGE_TLE;
+        else if (gSignal == "PROC_LIMIT")
+            d.graderMetaStatus = JudgeStatus::SPECIAL_JUDGE_RE;
         else if (gSignal == "MEMORY_LIMIT" || gSignal == "OUTPUT_LIMIT")
             d.graderMetaStatus = JudgeStatus::SPECIAL_JUDGE_RE;
         else if (gSignal == "SYSTEM_ERROR") d.graderMetaStatus = JudgeStatus::SYSTEM_ERROR;
@@ -1501,7 +1563,10 @@ inline TestCaseResult judgeDualTest(int tcId, int maxScore, const json& tc,
 
     fs::create_directories(ioDir);
     std::string inputPath = platform::pathJoin(ioDir, "test_input.txt");
-    writeFileContent(inputPath, tc.value("input_data", ""));
+    if (!writeFileContent(inputPath, tc.value("input_data", ""))) {
+        r.message = "System Error: cannot write test data file";
+        return r;
+    }
 
     std::vector<std::string> graderArgs;
     if (interactorStyle) {
@@ -1706,7 +1771,12 @@ inline JudgeResult judgeSubmission(
             if (!it->is_string()) continue;
             std::string outPath = platform::pathJoin(baseDir, key);
             fs::create_directories(fs::path(outPath).parent_path());
-            writeFileContent(outPath, it.value().get<std::string>());
+            if (!writeFileContent(outPath, it.value().get<std::string>())) {
+                result.status = JudgeStatus::SYSTEM_ERROR;
+                result.compileError = "System Error: cannot write submission file: " + key;
+                try { fs::remove_all(baseDir); } catch (...) {}
+                return result;
+            }
             sources.push_back(outPath);
         }
         if (sources.size() < 2) {
@@ -1739,7 +1809,12 @@ inline JudgeResult judgeSubmission(
             if (!it->is_string()) continue;
             std::string outPath = platform::pathJoin(baseDir, key);
             fs::create_directories(fs::path(outPath).parent_path());
-            writeFileContent(outPath, it.value().get<std::string>());
+            if (!writeFileContent(outPath, it.value().get<std::string>())) {
+                result.status = JudgeStatus::SYSTEM_ERROR;
+                result.compileError = "System Error: cannot write submission file: " + key;
+                try { fs::remove_all(baseDir); } catch (...) {}
+                return result;
+            }
             std::string fname = fs::path(key).filename().string();
             // 主 grader: grader.<源码扩展名> (对齐 LemonLime commExecGrader)
             if (graderMainPath.empty() && fname.rfind("grader.", 0) == 0) {
@@ -1787,7 +1862,12 @@ inline JudgeResult judgeSubmission(
                     if (!it->is_string()) continue;
                     std::string outPath = platform::pathJoin(baseDir, key);
                     fs::create_directories(fs::path(outPath).parent_path());
-                    writeFileContent(outPath, it.value().get<std::string>());
+                    if (!writeFileContent(outPath, it.value().get<std::string>())) {
+                        result.status = JudgeStatus::SYSTEM_ERROR;
+                        result.compileError = "System Error: cannot write submission file: " + key;
+                        try { fs::remove_all(baseDir); } catch (...) {}
+                        return result;
+                    }
                     iSources.push_back(outPath);
                 }
             }
@@ -1799,7 +1879,12 @@ inline JudgeResult judgeSubmission(
             std::string iData = p.value("interactor_data", "");
             if (!iCode.empty()) {
                 std::string srcPath = platform::pathJoin(baseDir, "interactor.cpp");
-                writeFileContent(srcPath, iCode);
+                if (!writeFileContent(srcPath, iCode)) {
+                    result.status = JudgeStatus::SYSTEM_ERROR;
+                    result.compileError = "System Error: cannot write interactor source";
+                    try { fs::remove_all(baseDir); } catch (...) {}
+                    return result;
+                }
                 CompileResult iCr = compileSources({srcPath}, baseDir, "interactor");
                 if (!iCr.success) {
                     result.status = JudgeStatus::SYSTEM_ERROR;
@@ -1875,7 +1960,12 @@ inline JudgeResult judgeSubmission(
         std::string gExeFile = p.value("generator_exe", "");
         if (!gCode.empty()) {
             std::string genSrc = platform::pathJoin(baseDir, "generator.cpp");
-            writeFileContent(genSrc, gCode);
+            if (!writeFileContent(genSrc, gCode)) {
+                result.status = JudgeStatus::SYSTEM_ERROR;
+                result.compileError = "System Error: cannot write generator source";
+                try { fs::remove_all(baseDir); } catch (...) {}
+                return result;
+            }
             CompileResult gCr = compileSources({genSrc}, baseDir, "generator");
             if (!gCr.success) {
                 result.status = JudgeStatus::SYSTEM_ERROR;

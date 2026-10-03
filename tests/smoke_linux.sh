@@ -186,6 +186,61 @@ echo "$OUT" | grep -q "Problem $ZID deleted\."; t "zh delete" $? "$OUT"
 run displaylang delete en
 [ $CODE -eq 1 ] && echo "$OUT" | grep -q "Built-in language 'en' cannot be deleted"; t "delete builtin en refused" $? "code=$CODE $OUT"
 
+# non-object config -> warn + graceful unconfigured exit (D1); BOM config -> parses cleanly (D2)
+CFG="$CLIJUDGE_DATA_DIR/config.json"
+CFG_ORIG2=$(cat "$CFG")
+echo '[1,2,3]' > "$CFG"
+run problem count
+echo "$OUT" | grep -q "is not a JSON object"; t "non-object config warns" $? "$OUT"
+[ $CODE -eq 1 ] && echo "$OUT" | grep -q "No display language configured"; t "non-object config graceful" $? "code=$CODE $OUT"
+printf '\xEF\xBB\xBF{"current_lang":"en"}' > "$CFG"
+run problem count
+[ $CODE -eq 0 ] && ! echo "$OUT" | grep -q "failed to parse"; t "BOM config parses" $? "code=$CODE $OUT"
+printf '%s' "$CFG_ORIG2" > "$CFG"
+
+# text_no_space: tokens equal but line grouping differs -> PE (A3)
+run problem create "PE test" -compare text_no_space
+PEID=$(echo "$OUT" | sed -n 's/.*Problem created with ID: \([0-9]*\).*/\1/p' | head -1)
+[ -n "$PEID" ]; t "pe problem create" $? "$OUT"
+printf '0\n' > "$W/pe_in.txt"; printf '1\n2 3\n' > "$W/pe_exp.txt"
+run problem testdata "$PEID" create "$W/pe_in.txt" "$W/pe_exp.txt" 1000 256 50
+echo "$OUT" | grep -q "Test case created"; t "pe testdata" $? "$OUT"
+cat > "$W/pe.cpp" <<'EOF'
+#include <iostream>
+int main(){std::cout<<"1 2\n3\n";return 0;}
+EOF
+run problem submit "$PEID" "$W/pe.cpp" --as carol
+[ $CODE -eq 1 ] && echo "$OUT" | grep -q "Status: PE"; t "submit PE" $? "code=$CODE $OUT"
+
+# CDF custom-field roundtrip (C1/C2/C4): float mode + tolerances + per-tc time limit
+run problem create "FloatRT" -compare float_rel -float-abs 0 -float-rel 1e-6
+FTID=$(echo "$OUT" | sed -n 's/.*Problem created with ID: \([0-9]*\).*/\1/p' | head -1)
+[ -n "$FTID" ]; t "float problem create" $? "$OUT"
+printf '0\n' > "$W/fin.txt"; printf '0.0\n' > "$W/fout.txt"
+run problem testdata "$FTID" create "$W/fin.txt" "$W/fout.txt" 5000 256 50
+echo "$OUT" | grep -q "Test case created"; t "float testdata" $? "$OUT"
+run problem view "$FTID"
+echo "$OUT" | grep -q "Compare Mode: float_rel" && echo "$OUT" | grep -q "Float Rel Tolerance: 1e-06"; t "float view fields" $? "$OUT"
+run contest create CFT "2026-01-01 10:00:00" "2026-01-02 10:00:00" "$FTID"
+FTCID=$(echo "$OUT" | sed -n 's/.*Contest created with ID: \([0-9]*\).*/\1/p' | head -1)
+[ -n "$FTCID" ]; t "float contest create" $? "$OUT"
+run contest export "$FTCID" "$W/ft.cdf"
+echo "$OUT" | grep -q "Contest exported to:"; t "float contest export" $? "$OUT"
+grep -Eq '"compareModeCliJudge": *"float_rel"' "$W/ft.cdf"; r1=$?
+grep -Eq '"floatRelTol": *(1e-06|0\.000001)' "$W/ft.cdf"; r2=$?
+grep -Eq '"floatAbsTol": *0' "$W/ft.cdf"; r3=$?
+grep -Eq '"timeLimit": *5000' "$W/ft.cdf"; r4=$?
+[ $r1 -eq 0 ] && [ $r2 -eq 0 ] && [ $r3 -eq 0 ] && [ $r4 -eq 0 ]; t "cdf custom fields (mode/rel/abs/tc-time)" $? "r=$r1/$r2/$r3/$r4"
+run contest import "$W/ft.cdf"
+echo "$OUT" | grep -q "Contest imported:"; t "float contest import" $? "$OUT"
+NID=$(echo "$OUT" | sed -n 's/.*Imported problem:.*ID: \([0-9]*\).*/\1/p' | head -1)
+[ -n "$NID" ]; t "float reimport id ($NID)" $? "$OUT"
+run problem view "$NID"
+echo "$OUT" | grep -q "Compare Mode: float_rel"; t "reimport compare mode" $? "$OUT"
+echo "$OUT" | grep -q "Float Rel Tolerance: 1e-06"; t "reimport rel tolerance" $? "$OUT"
+run problem testdata "$NID"
+echo "$OUT" | grep -q '"time_limit": 5000'; t "reimport tc time 5000" $? "$OUT"
+
 echo ""
 echo "PASS: $pass  FAIL: $fail"
 if [ -s "$CLIJUDGE_SANDBOX_DEBUG" ]; then

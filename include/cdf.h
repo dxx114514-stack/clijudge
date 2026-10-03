@@ -80,6 +80,12 @@ struct CdfTask {
     std::string diffArguments;
     int realPrecision;
     std::string specialJudge;
+    // CliJudge 扩展字段 (Lemon 忽略未知键; 用于往返保留精确语义)
+    std::string compareModeCliJudge;  // 原始 compare_mode 字符串 (非空时优先)
+    std::string spjCode;              // spj 源码 (评测期编译的 SPJ)
+    bool hasFloatTol = false;         // 导出了 floatAbsTol/floatRelTol
+    double floatAbsTol = 0.0;
+    double floatRelTol = 0.0;
     std::string answerFileExtension;
     json compilerConfiguration;
     std::vector<CdfTestCase> testCases;
@@ -151,6 +157,14 @@ inline CdfTask parseTask(const json& j) {
     task.diffArguments = j.value("diffArguments", "");
     task.realPrecision = j.value("realPrecision", 3);
     task.specialJudge = j.value("specialJudge", "");
+    task.compareModeCliJudge = j.value("compareModeCliJudge", "");
+    task.spjCode = j.value("spjCode", "");
+    if (j.contains("floatAbsTol") && j.contains("floatRelTol") &&
+        j["floatAbsTol"].is_number() && j["floatRelTol"].is_number()) {
+        task.hasFloatTol = true;
+        task.floatAbsTol = j["floatAbsTol"].get<double>();
+        task.floatRelTol = j["floatRelTol"].get<double>();
+    }
     task.answerFileExtension = j.value("answerFileExtension", "out");
     task.compilerConfiguration = j.value("compilerConfiguration", json::object());
 
@@ -273,6 +287,12 @@ inline json taskToJson(const CdfTask& task) {
     j["diffArguments"] = task.diffArguments;
     j["realPrecision"] = task.realPrecision;
     j["specialJudge"] = task.specialJudge;
+    if (!task.compareModeCliJudge.empty()) j["compareModeCliJudge"] = task.compareModeCliJudge;
+    if (!task.spjCode.empty()) j["spjCode"] = task.spjCode;
+    if (task.hasFloatTol) {
+        j["floatAbsTol"] = task.floatAbsTol;
+        j["floatRelTol"] = task.floatRelTol;
+    }
     j["answerFileExtension"] = task.answerFileExtension;
     j["compilerConfiguration"] = task.compilerConfiguration;
 

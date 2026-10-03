@@ -147,23 +147,38 @@ struct JudgeSettings {
 };
 
 inline int clampInt(int v, int lo, int hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+// 类型安全取值: 字段存在但类型不符 (如 "compile_time_limit_ms": "10000")
+// 时回退默认值, 而不是让 json::value() 抛 type_error 直接 abort 评测命令
+template <typename T>
+inline T jsonValue(const json& j, const char* key, T def) {
+    auto it = j.find(key);
+    if (it == j.end() || it->is_null()) return def;
+    try {
+        return it->get<T>();
+    } catch (...) {
+        return def;
+    }
 }
 
 inline JudgeSettings fromJson(const json& j) {
     JudgeSettings s;
     if (!j.is_object()) return s;
-    s.compileTimeLimitMs = clampInt(j.value("compile_time_limit_ms", s.compileTimeLimitMs), 100, 300000);
-    s.specialJudgeTimeLimitMs = clampInt(j.value("special_judge_time_limit_ms", s.specialJudgeTimeLimitMs), 100, 300000);
-    s.sourceSizeLimitKB = clampInt(j.value("source_size_limit_kb", s.sourceSizeLimitKB), 1, 1024 * 1024);
-    s.rejudgeTimes = clampInt(j.value("rejudge_times", s.rejudgeTimes), 0, 12);
-    s.maxRejudgeTimes = clampInt(j.value("max_rejudge_times", s.maxRejudgeTimes), 0, 100000);
-    s.maxJudgingThreads = clampInt(j.value("max_judging_threads", s.maxJudgingThreads), 1, 64);
-    double r = j.value("extra_time_ratio", s.extraTimeRatio);
+    s.compileTimeLimitMs = clampInt(jsonValue<int>(j, "compile_time_limit_ms", s.compileTimeLimitMs), 100, 300000);
+    s.specialJudgeTimeLimitMs = clampInt(jsonValue<int>(j, "special_judge_time_limit_ms", s.specialJudgeTimeLimitMs), 100, 300000);
+    s.sourceSizeLimitKB = clampInt(jsonValue<int>(j, "source_size_limit_kb", s.sourceSizeLimitKB), 1, 1024 * 1024);
+    s.rejudgeTimes = clampInt(jsonValue<int>(j, "rejudge_times", s.rejudgeTimes), 0, 12);
+    s.maxRejudgeTimes = clampInt(jsonValue<int>(j, "max_rejudge_times", s.maxRejudgeTimes), 0, 100000);
+    s.maxJudgingThreads = clampInt(jsonValue<int>(j, "max_judging_threads", s.maxJudgingThreads), 1, 64);
+    double r = jsonValue<double>(j, "extra_time_ratio", s.extraTimeRatio);
     if (r < 0.0) r = 0.0;
     if (r > 10.0) r = 10.0;
     s.extraTimeRatio = r;
-    long long fw = j.value("file_write_limit_kb", (long long)s.fileWriteLimitKB);
+    long long fw = jsonValue<long long>(j, "file_write_limit_kb", (long long)s.fileWriteLimitKB);
     if (fw < 64) fw = 64;
     s.fileWriteLimitKB = fw;
     if (j.contains("env") && j["env"].is_object()) {
@@ -186,8 +201,8 @@ inline JudgeSettings fromJson(const json& j) {
                     }
                 }
             }
-            c.compile = v.value("compile", "");
-            c.run = v.value("run", "");
+            c.compile = jsonValue<std::string>(v, "compile", "");
+            c.run = jsonValue<std::string>(v, "run", "");
             if (c.extensions.empty() || c.run.empty()) continue;  // 无效条目跳过
             s.customLanguages.push_back(std::move(c));
         }
@@ -224,9 +239,14 @@ inline json toJson(const JudgeSettings& s) {
 inline json loadRawConfig() {
     std::ifstream f(configPath());
     if (!f.is_open()) return json::object();
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    // 记事本另存的 UTF-8 BOM 会让 json 解析失败 → 剥掉后再解析
+    if (content.size() >= 3 && (unsigned char)content[0] == 0xEF &&
+        (unsigned char)content[1] == 0xBB && (unsigned char)content[2] == 0xBF)
+        content = content.substr(3);
+    if (content.empty()) return json::object();
     try {
-        json j;
-        f >> j;
+        json j = json::parse(content);
         if (j.is_object()) return j;
         std::cerr << "Warning: " << configPath() << " is not a JSON object; using defaults." << std::endl;
     } catch (const std::exception& e) {

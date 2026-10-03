@@ -175,7 +175,7 @@ public:
             if (item.contains("problem_id") && item["problem_id"].get<int>() == problemId) {
                 total++;
                 std::string status = item.value("status", "pending");
-                if (status == "accepted") accepted++;
+                if (status == "AC" || status == "accepted") accepted++;
                 else if (status == "pending") pending++;
                 else error++;
             }

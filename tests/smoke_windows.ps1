@@ -167,6 +167,65 @@ Check "zh delete" ($r.out -match "Problem $zhId deleted\.") $r.out
 $r = Run @("displaylang", "delete", "en")
 Check "delete builtin en refused" (($r.code -eq 1) -and ($r.out -match "Built-in language 'en' cannot be deleted")) "code=$($r.code) out=$($r.out)"
 
+# T20 non-object config.json -> warn + graceful unconfigured exit (D1), BOM config -> parses cleanly (D2)
+$cfgPath = "$data\config.json"
+$cfgOrig = [IO.File]::ReadAllText($cfgPath)
+W $cfgPath '[1,2,3]'
+$r = Run @("problem", "count")
+Check "non-object config warns" ($r.out -match "is not a JSON object") $r.out
+Check "non-object config graceful" (($r.code -eq 1) -and ($r.out -match "No display language configured")) "code=$($r.code) out=$($r.out)"
+[IO.File]::WriteAllBytes($cfgPath, ([byte[]](0xEF, 0xBB, 0xBF)) + [Text.Encoding]::UTF8.GetBytes('{"current_lang":"en"}'))
+$r = Run @("problem", "count")
+Check "BOM config parses" (($r.code -eq 0) -and (-not ($r.out -match "failed to parse"))) "code=$($r.code) out=$($r.out)"
+[IO.File]::WriteAllText($cfgPath, $cfgOrig)
+
+# T21 text_no_space: tokens equal but line grouping differs -> PE (A3)
+$r = Run @("problem", "create", "PE test", "-compare", "text_no_space")
+$peId = 0
+if ($r.out -match "Problem created with ID: (\d+)") { $peId = [int]$Matches[1] }
+Check "pe problem create" ($peId -gt 0) $r.out
+W "$work\pe_in.txt" "0`n"
+W "$work\pe_exp.txt" "1`n2 3`n"
+$r = Run @("problem", "testdata", "$peId", "create", "$work\pe_in.txt", "$work\pe_exp.txt", "1000", "256", "50")
+Check "pe testdata" ($r.out -match "Test case created") $r.out
+W "$work\pe.cpp" '#include <iostream>
+int main(){std::cout<<"1 2\n3\n";return 0;}'
+$r = Run @("problem", "submit", "$peId", "$work\pe.cpp", "--as", "carol")
+Check "submit PE" (($r.code -eq 1) -and ($r.out -match "Status: PE")) "code=$($r.code) out=$($r.out)"
+
+# T22 CDF custom-field roundtrip (C1/C2/C4): float mode + tolerances + per-tc time limit
+$r = Run @("problem", "create", "FloatRT", "-compare", "float_rel", "-float-abs", "0", "-float-rel", "1e-6")
+$ftId = 0
+if ($r.out -match "Problem created with ID: (\d+)") { $ftId = [int]$Matches[1] }
+Check "float problem create" ($ftId -gt 0) $r.out
+W "$work\fin.txt" "0`n"
+W "$work\fout.txt" "0.0`n"
+$r = Run @("problem", "testdata", "$ftId", "create", "$work\fin.txt", "$work\fout.txt", "5000", "256", "50")
+Check "float testdata" ($r.out -match "Test case created") $r.out
+$r = Run @("problem", "view", "$ftId")
+Check "float view fields" (($r.out -match "Compare Mode: float_rel") -and ($r.out -match "Float Rel Tolerance: 1e-06")) $r.out
+$r = Run @("contest", "create", "CFT", "2026-01-01 10:00:00", "2026-01-02 10:00:00", "$ftId")
+$ftCid = 0
+if ($r.out -match "Contest created with ID: (\d+)") { $ftCid = [int]$Matches[1] }
+Check "float contest create" ($ftCid -gt 0) $r.out
+$r = Run @("contest", "export", "$ftCid", "$work\ft.cdf")
+Check "float contest export" ($r.out -match "Contest exported to:") $r.out
+$cdfText = [IO.File]::ReadAllText("$work\ft.cdf", [Text.UTF8Encoding]::new($false))
+Check "cdf has compareModeCliJudge" ($cdfText -match '"compareModeCliJudge":\s*"float_rel"') ""
+Check "cdf has floatRelTol" ($cdfText -match '"floatRelTol":\s*(1e-06|0\.000001)') ""
+Check "cdf has floatAbsTol 0" ($cdfText -match '"floatAbsTol":\s*0') ""
+Check "cdf tc timeLimit 5000" ($cdfText -match '"timeLimit":\s*5000') ""
+$r = Run @("contest", "import", "$work\ft.cdf")
+Check "float contest import" ($r.out -match "Contest imported:") $r.out
+$nId = 0
+if ($r.out -match "Imported problem:.*\(ID: (\d+)\)") { $nId = [int]$Matches[1] }
+Check "float reimport id" ($nId -gt 0) $r.out
+$r = Run @("problem", "view", "$nId")
+Check "reimport compare mode" ($r.out -match "Compare Mode: float_rel") $r.out
+Check "reimport rel tolerance" ($r.out -match "Float Rel Tolerance: 1e-06") $r.out
+$r = Run @("problem", "testdata", "$nId")
+Check "reimport tc time 5000" ($r.out -match '"time_limit": 5000') $r.out
+
 Write-Host ""
 Write-Host "PASS: $script:pass  FAIL: $script:fail"
 Remove-Item -Path $root -Recurse -Force -ErrorAction SilentlyContinue
