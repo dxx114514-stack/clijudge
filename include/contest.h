@@ -24,6 +24,7 @@
 #include <cctype>
 #include "json.hpp"
 #include "cdf.h"
+#include "lang.h"
 #include "platform.h"
 #include "problem.h"
 
@@ -92,7 +93,7 @@ private:
         ensureDataDir();
         std::string indexPath = dataDir + "/contests/contests.json";
         if (!platform::writeFileAtomic(indexPath, data.dump(2))) {
-            std::cerr << "Warning: failed to write " << indexPath << std::endl;
+            std::cerr << clijudge::lang::trf("contest.write_failed", "Warning: failed to write {0}", {indexPath}) << std::endl;
         }
     }
 
@@ -287,16 +288,14 @@ public:
     int importCdf(const std::string& cdfPath, const std::string& dataDir) {
         auto cdf = clijudge::cdf::parseCdf(cdfPath);
         if (cdf.tasks.empty()) {
-            std::cerr << "No problems in CDF file." << std::endl;
+            std::cerr << clijudge::lang::tr("contest.cdf_no_problems", "No problems in CDF file.") << std::endl;
             return -1;
         }
         // CDF 可能携带 SPJ/交互器/grader 源码（评测期以完全信任执行），导入前提示
         for (const auto& task : cdf.tasks) {
             if (!task.specialJudge.empty() || !task.interactor.empty() || !task.grader.empty()
                 || !task.graderFilesPath.empty()) {
-                std::cerr << "Warning: this CDF contains special judge/interactor/generator/grader code, "
-                          << "which is executed in a trusted (reduced-isolation) mode during judging. "
-                          << "Only import contests from sources you trust." << std::endl;
+                std::cerr << clijudge::lang::tr("contest.cdf_special_code_warning", "Warning: this CDF contains special judge/interactor/generator/grader code, which is executed in a trusted (reduced-isolation) mode during judging. Only import contests from sources you trust.") << std::endl;
                 break;
             }
         }
@@ -449,20 +448,24 @@ public:
             int problemId = problemStore.importProblem(problemJson);
             if (problemId > 0) {
                 problemIds.push_back(problemId);
-                std::cout << "  Imported problem: " << task.problemTitle << " (ID: " << problemId << ")" << std::endl;
+                std::cout << clijudge::lang::trf("contest.imported_problem",
+                                                 "  Imported problem: {0} (ID: {1})",
+                                                 {task.problemTitle, std::to_string(problemId)}) << std::endl;
             } else {
-                std::cerr << "  Failed to import problem: " << task.problemTitle << std::endl;
+                std::cerr << clijudge::lang::trf("contest.import_problem_failed", "  Failed to import problem: {0}",
+                                                 {task.problemTitle}) << std::endl;
             }
         }
 
         // 创建比赛
         if (problemIds.empty()) {
-            std::cerr << "No problems imported successfully." << std::endl;
+            std::cerr << clijudge::lang::tr("contest.no_problems_imported", "No problems imported successfully.") << std::endl;
             return -1;
         }
 
         int contestId = create(cdf.contestTitle, "", "", problemIds);
-        std::cout << "Contest imported: " << cdf.contestTitle << " (ID: " << contestId << ")" << std::endl;
+        std::cout << clijudge::lang::trf("contest.imported", "Contest imported: {0} (ID: {1})",
+                                         {cdf.contestTitle, std::to_string(contestId)}) << std::endl;
         return contestId;
     }
 
@@ -479,7 +482,8 @@ public:
         std::error_code dirEc;
         fs::create_directories(dataPath, dirEc);
         if (dirEc) {
-            std::cerr << "Failed to create data directory: " << dataPath.string() << " (" << dirEc.message() << ")" << std::endl;
+            std::cerr << clijudge::lang::trf("contest.data_dir_create_failed", "Failed to create data directory: {0} ({1})",
+                                             {dataPath.string(), dirEc.message()}) << std::endl;
             return nullptr;
         }
 
@@ -941,17 +945,17 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
                      const std::vector<int>& problemIds) {
     ContestStore store(dataDir);
     int id = store.create(title, startTime, endTime, problemIds);
-    std::cout << "Contest created with ID: " << id << std::endl;
+    std::cout << clijudge::lang::trf("contest.created", "Contest created with ID: {0}", {std::to_string(id)}) << std::endl;
     return 0;
 }
 
 inline int cmdDelete(const std::string& dataDir, int id) {
     ContestStore store(dataDir);
     if (store.deleteContest(id)) {
-        std::cout << "Contest " << id << " deleted." << std::endl;
+        std::cout << clijudge::lang::trf("contest.deleted", "Contest {0} deleted.", {std::to_string(id)}) << std::endl;
         return 0;
     } else {
-        std::cerr << "Contest " << id << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("contest.not_found", "Contest {0} not found.", {std::to_string(id)}) << std::endl;
         return 1;
     }
 }
@@ -960,7 +964,7 @@ inline int cmdView(const std::string& dataDir, int id) {
     ContestStore store(dataDir);
     json contest = store.view(id);
     if (contest.is_null()) {
-        std::cerr << "Contest " << id << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("contest.not_found", "Contest {0} not found.", {std::to_string(id)}) << std::endl;
         return 1;
     }
     std::cout << contest.dump(2) << std::endl;
@@ -972,12 +976,14 @@ inline int cmdProblemSubmit(const std::string& dataDir, int contestId,
                             const std::string& username = "") {
     ContestStore store(dataDir);
     if (store.submitProblem(contestId, problemIndex, filePath, username)) {
-        std::cout << "Submission accepted for contest " << contestId
-                  << " problem " << problemIndex << std::endl;
-        std::cout << "  User: " << (username.empty() ? "unknown" : username) << std::endl;
+        std::cout << clijudge::lang::trf("contest.submission_accepted",
+                                         "Submission accepted for contest {0} problem {1}",
+                                         {std::to_string(contestId), std::to_string(problemIndex)}) << std::endl;
+        std::cout << clijudge::lang::trf("contest.submission_user", "  User: {0}",
+                                         {username.empty() ? "unknown" : username}) << std::endl;
         return 0;
     } else {
-        std::cerr << "Failed to submit: invalid contest or problem index." << std::endl;
+        std::cerr << clijudge::lang::tr("contest.submit_failed", "Failed to submit: invalid contest or problem index.") << std::endl;
         return 1;
     }
 }
@@ -1000,7 +1006,7 @@ inline int cmdLeaderboard(const std::string& dataDir, int contestId) {
     ContestStore store(dataDir);
     json board = store.leaderboard(contestId);
     if (board.is_null()) {
-        std::cerr << "Contest " << contestId << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("contest.not_found", "Contest {0} not found.", {std::to_string(contestId)}) << std::endl;
         return 1;
     }
     std::cout << board.dump(2) << std::endl;
@@ -1011,24 +1017,24 @@ inline int cmdReport(const std::string& dataDir, int contestId, const std::strin
     ContestStore store(dataDir);
     std::string html = store.reportHtml(contestId);
     if (html.empty()) {
-        std::cerr << "Contest " << contestId << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("contest.not_found", "Contest {0} not found.", {std::to_string(contestId)}) << std::endl;
         return 1;
     }
     std::string path = outPath.empty() ? ("contest_" + std::to_string(contestId) + "_report.html") : outPath;
     std::ofstream f(path, std::ios::binary);
     if (!f.is_open()) {
-        std::cerr << "Failed to create file: " << path << std::endl;
+        std::cerr << clijudge::lang::trf("contest.file_create_failed", "Failed to create file: {0}", {path}) << std::endl;
         return 1;
     }
     f << html;
     f.close();
-    std::cout << "Contest report generated: " << path << std::endl;
+    std::cout << clijudge::lang::trf("contest.report_generated", "Contest report generated: {0}", {path}) << std::endl;
     return 0;
 }
 
 inline int cmdImportCdf(const std::string& dataDir, const std::string& cdfPath) {
     if (!fs::exists(cdfPath)) {
-        std::cerr << "CDF file not found: " << cdfPath << std::endl;
+        std::cerr << clijudge::lang::trf("contest.cdf_not_found", "CDF file not found: {0}", {cdfPath}) << std::endl;
         return 1;
     }
     ContestStore store(dataDir);
@@ -1043,18 +1049,18 @@ inline int cmdExportCdf(const std::string& dataDir, int contestId, const std::st
     ContestStore store(dataDir);
     json cdf = store.exportCdf(contestId, cdfPath);
     if (cdf.is_null()) {
-        std::cerr << "Contest " << contestId << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("contest.not_found", "Contest {0} not found.", {std::to_string(contestId)}) << std::endl;
         return 1;
     }
 
     std::ofstream f(cdfPath);
     if (!f.is_open()) {
-        std::cerr << "Failed to create file: " << cdfPath << std::endl;
+        std::cerr << clijudge::lang::trf("contest.file_create_failed", "Failed to create file: {0}", {cdfPath}) << std::endl;
         return 1;
     }
     f << cdf.dump(-1);  // 紧凑格式
     f.close();
-    std::cout << "Contest exported to: " << cdfPath << std::endl;
+    std::cout << clijudge::lang::trf("contest.exported_to", "Contest exported to: {0}", {cdfPath}) << std::endl;
     return 0;
 }
 

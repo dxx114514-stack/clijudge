@@ -21,6 +21,7 @@
 #include "platform.h"
 #include "settings.h"
 #include "judge.h"
+#include "lang.h"
 #include "sandbox_runner.hpp"
 
 namespace clijudge {
@@ -61,7 +62,7 @@ inline void cleanupWorkDir(const std::string& workDir) {
 inline int cmdRun(const std::string& codePath, const std::string& inputPath = "") {
     // 验证代码文件存在
     if (!fs::exists(codePath)) {
-        std::cerr << "Error: code file not found: " << codePath << std::endl;
+        std::cerr << clijudge::lang::trf("ide.code_file_not_found", "Error: code file not found: {0}", {codePath}) << std::endl;
         return 1;
     }
 
@@ -121,14 +122,14 @@ inline int cmdRun(const std::string& codePath, const std::string& inputPath = ""
 
     // 输出结果
     if (result.success) {
-        std::cout << "Exit code: " << result.exitCode << std::endl;
-        std::cout << "Time: " << result.timeUsedMs << " ms" << std::endl;
-        std::cout << "Memory: " << result.memoryUsedKB << " KB" << std::endl;
+        std::cout << clijudge::lang::trf("ide.exit_code", "Exit code: {0}", {std::to_string(result.exitCode)}) << std::endl;
+        std::cout << clijudge::lang::trf("ide.time", "Time: {0} ms", {std::to_string(result.timeUsedMs)}) << std::endl;
+        std::cout << clijudge::lang::trf("ide.memory", "Memory: {0} KB", {std::to_string(result.memoryUsedKB)}) << std::endl;
         if (strcmp(result.signal, "null") != 0) {
-            std::cout << "Signal: " << result.signal << std::endl;
+            std::cout << clijudge::lang::trf("ide.signal", "Signal: {0}", {result.signal}) << std::endl;
         }
     } else {
-        std::cerr << "Sandbox failed to run the code." << std::endl;
+        std::cerr << clijudge::lang::tr("ide.sandbox_failed", "Sandbox failed to run the code.") << std::endl;
     }
 
     // 清理临时目录

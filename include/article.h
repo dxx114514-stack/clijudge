@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <filesystem>
 #include "json.hpp"
+#include "lang.h"
 #include "platform.h"
 
 namespace clijudge {
@@ -75,7 +76,7 @@ private:
         ensureDataDir();
         std::string indexPath = dataDir + "/articles/articles.json";
         if (!platform::writeFileAtomic(indexPath, data.dump(2))) {
-            std::cerr << "Warning: failed to write " << indexPath << std::endl;
+            std::cerr << clijudge::lang::trf("article.write_failed", "Warning: failed to write {0}", {indexPath}) << std::endl;
         }
     }
 
@@ -127,7 +128,8 @@ public:
         // 保存文章内容到单独文件 (原子写 + 失败告警; 半截文件会让 view 解析崩溃)
         ensureDataDir();
         if (!platform::writeFileAtomic(getArticlePath(id), article.dump(2))) {
-            std::cerr << "Warning: failed to write " << getArticlePath(id) << std::endl;
+            std::cerr << clijudge::lang::trf("article.write_failed", "Warning: failed to write {0}",
+                                             {getArticlePath(id)}) << std::endl;
         }
 
         return id;
@@ -209,17 +211,17 @@ inline int cmdCount(const std::string& dataDir) {
 inline int cmdCreate(const std::string& dataDir, const std::string& title, const std::string& mdPath = "") {
     ArticleStore store(dataDir);
     int id = store.create(title, mdPath);
-    std::cout << "Article created, ID: " << id << std::endl;
+    std::cout << clijudge::lang::trf("article.created", "Article created, ID: {0}", {std::to_string(id)}) << std::endl;
     return 0;
 }
 
 inline int cmdDelete(const std::string& dataDir, int id) {
     ArticleStore store(dataDir);
     if (store.deleteArticle(id)) {
-        std::cout << "Article " << id << " deleted." << std::endl;
+        std::cout << clijudge::lang::trf("article.deleted", "Article {0} deleted.", {std::to_string(id)}) << std::endl;
         return 0;
     } else {
-        std::cerr << "Article " << id << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("article.not_found", "Article {0} not found.", {std::to_string(id)}) << std::endl;
         return 1;
     }
 }
@@ -235,7 +237,7 @@ inline int cmdView(const std::string& dataDir, int id) {
     ArticleStore store(dataDir);
     json article = store.view(id);
     if (article.is_null()) {
-        std::cerr << "Article " << id << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("article.not_found", "Article {0} not found.", {std::to_string(id)}) << std::endl;
         return 1;
     }
     std::cout << article.dump(2) << std::endl;

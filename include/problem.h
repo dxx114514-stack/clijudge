@@ -147,7 +147,7 @@ private:
         ensureDataDir();
         std::string indexPath = dataDir + "/problems/problems.json";
         if (!platform::writeFileAtomic(indexPath, data.dump(2))) {
-            std::cerr << "Warning: failed to write " << indexPath << std::endl;
+            std::cerr << clijudge::lang::trf("problem.write_index_warning", "Warning: failed to write {0}", {indexPath}) << std::endl;
         }
     }
 
@@ -614,13 +614,13 @@ inline bool applyTypeOptions(json& updates,
         try {
             updates["subtask_dependence"] = json::parse(dependenceJson);
         } catch (...) {
-            std::cerr << "Invalid dependence JSON: " << dependenceJson << std::endl;
+            std::cerr << clijudge::lang::trf("problem.invalid_dependence_json", "Invalid dependence JSON: {0}", {dependenceJson}) << std::endl;
             return false;
         }
     }
     if (!interactorFile.empty()) {
         if (!fs::exists(interactorFile)) {
-            std::cerr << "Interactor file not found: " << interactorFile << std::endl;
+            std::cerr << clijudge::lang::trf("problem.interactor_not_found", "Interactor file not found: {0}", {interactorFile}) << std::endl;
             return false;
         }
         std::string ext = fs::path(interactorFile).extension().string();
@@ -629,7 +629,7 @@ inline bool applyTypeOptions(json& updates,
         if (ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".c") {
             updates["interactor_code"] = readFileContent(interactorFile);
             if (updates["interactor_code"].get<std::string>().empty()) {
-                std::cerr << "Failed to read interactor file: " << interactorFile << std::endl;
+                std::cerr << clijudge::lang::trf("problem.interactor_read_failed", "Failed to read interactor file: {0}", {interactorFile}) << std::endl;
                 return false;
             }
         } else {
@@ -649,7 +649,7 @@ inline bool applyTypeOptions(json& updates,
             gf[key] = readFileContent(it->path().string());
         }
         if (ec || gf.empty()) {
-            std::cerr << "No grader files found in: " << graderDir << std::endl;
+            std::cerr << clijudge::lang::trf("problem.grader_not_found", "No grader files found in: {0}", {graderDir}) << std::endl;
             return false;
         }
         updates["grader_files"] = gf;
@@ -657,7 +657,7 @@ inline bool applyTypeOptions(json& updates,
     // 测试点生成器: 源码内嵌 (generator_code), 其余按外部可执行文件 (generator_exe)
     if (!generatorFile.empty()) {
         if (!fs::exists(generatorFile)) {
-            std::cerr << "Generator file not found: " << generatorFile << std::endl;
+            std::cerr << clijudge::lang::trf("problem.generator_not_found", "Generator file not found: {0}", {generatorFile}) << std::endl;
             return false;
         }
         std::string ext = fs::path(generatorFile).extension().string();
@@ -666,7 +666,7 @@ inline bool applyTypeOptions(json& updates,
         if (ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".c") {
             updates["generator_code"] = readFileContent(generatorFile);
             if (updates["generator_code"].get<std::string>().empty()) {
-                std::cerr << "Failed to read generator file: " << generatorFile << std::endl;
+                std::cerr << clijudge::lang::trf("problem.generator_read_failed", "Failed to read generator file: {0}", {generatorFile}) << std::endl;
                 return false;
             }
         } else {
@@ -675,7 +675,7 @@ inline bool applyTypeOptions(json& updates,
     }
     if (!generatorExe.empty()) {
         if (!fs::exists(generatorExe)) {
-            std::cerr << "Generator exe not found: " << generatorExe << std::endl;
+            std::cerr << clijudge::lang::trf("problem.generator_exe_not_found", "Generator exe not found: {0}", {generatorExe}) << std::endl;
             return false;
         }
         updates["generator_exe"] = fs::absolute(generatorExe).string();
@@ -757,17 +757,17 @@ inline int cmdCreate(const std::string& dataDir, const std::string& title,
         store.edit(id, updates);
     }
 
-    std::cout << "Problem created with ID: " << id << std::endl;
+    std::cout << clijudge::lang::trf("problem.created", "Problem created with ID: {0}", {std::to_string(id)}) << std::endl;
     return 0;
 }
 
 inline int cmdDelete(const std::string& dataDir, int id) {
     ProblemStore store(dataDir);
     if (store.deleteProblem(id)) {
-        std::cout << "Problem " << id << " deleted." << std::endl;
+        std::cout << clijudge::lang::trf("problem.deleted", "Problem {0} deleted.", {std::to_string(id)}) << std::endl;
         return 0;
     } else {
-        std::cerr << "Problem " << id << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("problem.not_found", "Problem {0} not found.", {std::to_string(id)}) << std::endl;
         return 1;
     }
 }
@@ -776,34 +776,34 @@ inline int cmdView(const std::string& dataDir, int id) {
     ProblemStore store(dataDir);
     json problem = store.view(id);
     if (problem.is_null()) {
-        std::cerr << "Problem " << id << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("problem.not_found", "Problem {0} not found.", {std::to_string(id)}) << std::endl;
         return 1;
     }
 
     const auto& p = problem["problem"];
 
     // 格式化显示题面
-    std::cout << "=== Problem " << p.value("id", 0) << " ===" << std::endl;
-    std::cout << "Title: " << p.value("title", "") << std::endl;
+    std::cout << clijudge::lang::trf("problem.view_header", "=== Problem {0} ===", {std::to_string(p.value("id", 0))}) << std::endl;
+    std::cout << clijudge::lang::tr("problem.title_label", "Title: ") << p.value("title", "") << std::endl;
     std::cout << std::endl;
 
     std::string desc = p.value("description", "");
     if (!desc.empty()) {
-        std::cout << "## Description" << std::endl;
+        std::cout << clijudge::lang::tr("problem.heading_description", "## Description") << std::endl;
         std::cout << desc << std::endl;
         std::cout << std::endl;
     }
 
     std::string inputDesc = p.value("input_desc", "");
     if (!inputDesc.empty()) {
-        std::cout << "## Input" << std::endl;
+        std::cout << clijudge::lang::tr("problem.heading_input", "## Input") << std::endl;
         std::cout << inputDesc << std::endl;
         std::cout << std::endl;
     }
 
     std::string outputDesc = p.value("output_desc", "");
     if (!outputDesc.empty()) {
-        std::cout << "## Output" << std::endl;
+        std::cout << clijudge::lang::tr("problem.heading_output", "## Output") << std::endl;
         std::cout << outputDesc << std::endl;
         std::cout << std::endl;
     }
@@ -811,15 +811,15 @@ inline int cmdView(const std::string& dataDir, int id) {
     std::string sampleIn = p.value("sample_input", "");
     std::string sampleOut = p.value("sample_output", "");
     if (!sampleIn.empty() || !sampleOut.empty()) {
-        std::cout << "## Sample Input/Output" << std::endl;
+        std::cout << clijudge::lang::tr("problem.heading_sample", "## Sample Input/Output") << std::endl;
         if (!sampleIn.empty()) {
-            std::cout << "Input:" << std::endl;
+            std::cout << clijudge::lang::tr("problem.sample_input_label", "Input:") << std::endl;
             std::cout << "```" << std::endl;
             std::cout << sampleIn << std::endl;
             std::cout << "```" << std::endl;
         }
         if (!sampleOut.empty()) {
-            std::cout << "Output:" << std::endl;
+            std::cout << clijudge::lang::tr("problem.sample_output_label", "Output:") << std::endl;
             std::cout << "```" << std::endl;
             std::cout << sampleOut << std::endl;
             std::cout << "```" << std::endl;
@@ -829,16 +829,16 @@ inline int cmdView(const std::string& dataDir, int id) {
 
     std::string hint = p.value("hint", "");
     if (!hint.empty()) {
-        std::cout << "## Hint" << std::endl;
+        std::cout << clijudge::lang::tr("problem.heading_hint", "## Hint") << std::endl;
         std::cout << hint << std::endl;
         std::cout << std::endl;
     }
 
-    std::cout << "## Limits" << std::endl;
-    std::cout << "Time Limit: " << p.value("time_limit", 1000) << " ms" << std::endl;
-    std::cout << "Memory Limit: " << p.value("memory_limit", 256) << " MB" << std::endl;
-    std::cout << "Public: " << (p.value("is_public", true) ? "Yes" : "No") << std::endl;
-    std::cout << "Hidden: " << (p.value("is_hidden", false) ? "Yes" : "No") << std::endl;
+    std::cout << clijudge::lang::tr("problem.heading_limits", "## Limits") << std::endl;
+    std::cout << clijudge::lang::trf("problem.time_limit", "Time Limit: {0} ms", {std::to_string(p.value("time_limit", 1000))}) << std::endl;
+    std::cout << clijudge::lang::trf("problem.memory_limit", "Memory Limit: {0} MB", {std::to_string(p.value("memory_limit", 256))}) << std::endl;
+    std::cout << clijudge::lang::trf("problem.is_public", "Public: {0}", {p.value("is_public", true) ? clijudge::lang::tr("problem.yes", "Yes") : clijudge::lang::tr("problem.no", "No")}) << std::endl;
+    std::cout << clijudge::lang::trf("problem.is_hidden", "Hidden: {0}", {p.value("is_hidden", false) ? clijudge::lang::tr("problem.yes", "Yes") : clijudge::lang::tr("problem.no", "No")}) << std::endl;
 
     // Special Judge 相关信息
     std::string problemType = p.value("problem_type", "traditional");
@@ -846,33 +846,33 @@ inline int cmdView(const std::string& dataDir, int id) {
     
     if (problemType != "traditional" || compareMode != "text_strict") {
         std::cout << std::endl;
-        std::cout << "## Special Judge" << std::endl;
-        std::cout << "Problem Type: " << problemType << std::endl;
-        std::cout << "Compare Mode: " << compareMode << std::endl;
+        std::cout << clijudge::lang::tr("problem.heading_special_judge", "## Special Judge") << std::endl;
+        std::cout << clijudge::lang::tr("problem.problem_type_label", "Problem Type: ") << problemType << std::endl;
+        std::cout << clijudge::lang::tr("problem.compare_mode_label", "Compare Mode: ") << compareMode << std::endl;
         
         if (compareMode == "float_abs" || compareMode == "float_rel" || compareMode == "float_all") {
-            std::cout << "Float Abs Tolerance: " << p.value("float_abs_tolerance", 0.0) << std::endl;
-            std::cout << "Float Rel Tolerance: " << p.value("float_rel_tolerance", 0.0) << std::endl;
+            std::cout << clijudge::lang::tr("problem.float_abs_label", "Float Abs Tolerance: ") << p.value("float_abs_tolerance", 0.0) << std::endl;
+            std::cout << clijudge::lang::tr("problem.float_rel_label", "Float Rel Tolerance: ") << p.value("float_rel_tolerance", 0.0) << std::endl;
         }
         
         std::string spjSource = p.value("spj_code", "");
         std::string specialJudgeExe = p.value("special_judge_exe", "");
         if (!spjSource.empty()) {
-            std::cout << "Source: embedded (" << spjSource.size() << " bytes)" << std::endl;
+            std::cout << clijudge::lang::trf("problem.source_embedded", "Source: embedded ({0} bytes)", {std::to_string(spjSource.size())}) << std::endl;
         } else if (!specialJudgeExe.empty()) {
             // 字段误存源码(含换行)时只给摘要, 不直接输出代码
             if (specialJudgeExe.find('\n') != std::string::npos) {
-                std::cout << "Source: embedded (" << specialJudgeExe.size() << " bytes)" << std::endl;
+                std::cout << clijudge::lang::trf("problem.source_embedded", "Source: embedded ({0} bytes)", {std::to_string(specialJudgeExe.size())}) << std::endl;
             } else {
-                std::cout << "Special Judge Exe: " << specialJudgeExe << std::endl;
+                std::cout << clijudge::lang::tr("problem.special_judge_exe_label", "Special Judge Exe: ") << specialJudgeExe << std::endl;
             }
         }
         
         const auto& allowedLangs = p.value("allowed_languages", json::array());
         if (!allowedLangs.empty()) {
-            std::cout << "Allowed Languages: ";
+            std::cout << clijudge::lang::tr("problem.allowed_languages_label", "Allowed Languages: ");
             for (size_t i = 0; i < allowedLangs.size(); i++) {
-                if (i > 0) std::cout << ", ";
+                if (i > 0) std::cout << clijudge::lang::tr("problem.language_separator", ", ");
                 std::cout << allowedLangs[i].get<std::string>();
             }
             std::cout << std::endl;
@@ -954,15 +954,15 @@ inline int cmdEdit(const std::string& dataDir, int id,
     }
 
     if (updates.empty()) {
-        std::cerr << "No updates specified." << std::endl;
+        std::cerr << clijudge::lang::tr("problem.no_updates", "No updates specified.") << std::endl;
         return 1;
     }
 
     if (store.edit(id, updates)) {
-        std::cout << "Problem " << id << " updated." << std::endl;
+        std::cout << clijudge::lang::trf("problem.updated", "Problem {0} updated.", {std::to_string(id)}) << std::endl;
         return 0;
     } else {
-        std::cerr << "Problem " << id << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("problem.not_found", "Problem {0} not found.", {std::to_string(id)}) << std::endl;
         return 1;
     }
 }
@@ -988,7 +988,7 @@ inline int cmdSubmit(const std::string& dataDir, int problemId, const std::strin
                                      submission.timeUsed, submission.memoryUsed,
                                      username, submission.judgeDetail);
 
-    std::cout << "=== Submission Result ===" << std::endl;
+    std::cout << clijudge::lang::tr("problem.submission_result_header", "=== Submission Result ===") << std::endl;
     std::cout << clijudge::lang::tr("judge.status", "Status") << ": " << submission.status << std::endl;
     std::cout << clijudge::lang::tr("judge.score", "Score") << ": " << submission.score << std::endl;
     std::cout << clijudge::lang::tr("judge.time", "Time") << ": " << submission.timeUsed << " ms" << std::endl;
@@ -1003,7 +1003,7 @@ inline int cmdRejudge(const std::string& dataDir, int submissionId) {
     clijudge::submit::SubmitStore sstore(dataDir);
     json sub = sstore.getSubmission(submissionId);
     if (sub.is_null()) {
-        std::cerr << "Submission " << submissionId << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("problem.submission_not_found", "Submission {0} not found.", {std::to_string(submissionId)}) << std::endl;
         return 1;
     }
     int problemId = sub.value("problem_id", 0);
@@ -1011,18 +1011,18 @@ inline int cmdRejudge(const std::string& dataDir, int submissionId) {
     int judgeTimes = sub.value("judge_times", 1);
     int maxTimes = clijudge::settings::getMaxRejudgeTimes();
     if (judgeTimes > maxTimes) {
-        std::cerr << "Max rejudge times reached (" << maxTimes << ")." << std::endl;
+        std::cerr << clijudge::lang::trf("problem.max_rejudge_reached", "Max rejudge times reached ({0}).", {std::to_string(maxTimes)}) << std::endl;
         return 1;
     }
 
     ProblemStore store(dataDir);
     json problem = store.view(problemId);
     if (problem.is_null()) {
-        std::cerr << "Problem " << problemId << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("problem.not_found", "Problem {0} not found.", {std::to_string(problemId)}) << std::endl;
         return 1;
     }
     if (!fs::exists(filePath)) {
-        std::cerr << "Submission file not found: " << filePath << std::endl;
+        std::cerr << clijudge::lang::trf("problem.submission_file_not_found", "Submission file not found: {0}", {filePath}) << std::endl;
         return 1;
     }
 
@@ -1043,13 +1043,13 @@ inline int cmdRejudge(const std::string& dataDir, int submissionId) {
     }
     sstore.updateSubmission(submissionId, upd);
 
-    std::cout << "=== Rejudge Result ===" << std::endl;
-    std::cout << "Submission: " << submissionId << std::endl;
+    std::cout << clijudge::lang::tr("problem.rejudge_result_header", "=== Rejudge Result ===") << std::endl;
+    std::cout << clijudge::lang::trf("problem.submission_label", "Submission: {0}", {std::to_string(submissionId)}) << std::endl;
     std::cout << clijudge::lang::tr("judge.status", "Status") << ": " << submission.status << std::endl;
     std::cout << clijudge::lang::tr("judge.score", "Score") << ": " << submission.score << std::endl;
     std::cout << clijudge::lang::tr("judge.time", "Time") << ": " << submission.timeUsed << " ms" << std::endl;
     std::cout << clijudge::lang::tr("judge.memory", "Memory") << ": " << submission.memoryUsed << " KB" << std::endl;
-    std::cout << "Judge times: " << (judgeTimes + 1) << std::endl;
+    std::cout << clijudge::lang::trf("problem.judge_times", "Judge times: {0}", {std::to_string(judgeTimes + 1)}) << std::endl;
     return (submission.status == "AC") ? 0 : 1;
 }
 
@@ -1074,7 +1074,7 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     } else {
         inContent = readFileContent(inputData);
         if (inContent.empty()) {
-            std::cerr << "Failed to read input file: " << inputData << std::endl;
+            std::cerr << clijudge::lang::trf("problem.read_input_failed", "Failed to read input file: {0}", {inputData}) << std::endl;
             return 1;
         }
     }
@@ -1084,7 +1084,7 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     } else {
         outContent = readFileContent(outputData);
         if (outContent.empty()) {
-            std::cerr << "Failed to read output file: " << outputData << std::endl;
+            std::cerr << clijudge::lang::trf("problem.read_output_failed", "Failed to read output file: {0}", {outputData}) << std::endl;
             return 1;
         }
     }
@@ -1101,10 +1101,10 @@ inline int cmdTestDataCreate(const std::string& dataDir, int problemId,
     tc.subtaskId = 1;  // 默认子任务为1
 
     if (store.addTestCase(problemId, tc)) {
-        std::cout << "Test case created with ID: " << tc.id << std::endl;
+        std::cout << clijudge::lang::trf("problem.testcase_created", "Test case created with ID: {0}", {std::to_string(tc.id)}) << std::endl;
         return 0;
     } else {
-        std::cerr << "Failed to create test case." << std::endl;
+        std::cerr << clijudge::lang::tr("problem.testcase_create_failed", "Failed to create test case.") << std::endl;
         return 1;
     }
 }
@@ -1114,13 +1114,13 @@ inline int cmdTestDataImportZip(const std::string& dataDir, int problemId,
                                 const std::string& zipPath,
                                 int timeLimit = -1, int memoryLimit = -1, int score = 25) {
     if (!fs::exists(zipPath)) {
-        std::cerr << "Zip file not found: " << zipPath << std::endl;
+        std::cerr << clijudge::lang::trf("problem.zip_not_found", "Zip file not found: {0}", {zipPath}) << std::endl;
         return 1;
     }
 
     std::vector<std::string> entries = zipListEntries(zipPath);
     if (entries.empty()) {
-        std::cerr << "No entries found in zip: " << zipPath << std::endl;
+        std::cerr << clijudge::lang::trf("problem.zip_no_entries", "No entries found in zip: {0}", {zipPath}) << std::endl;
         return 1;
     }
 
@@ -1140,7 +1140,7 @@ inline int cmdTestDataImportZip(const std::string& dataDir, int problemId,
     }
 
     if (inFiles.empty()) {
-        std::cerr << "No .in files found in zip." << std::endl;
+        std::cerr << clijudge::lang::tr("problem.zip_no_in_files", "No .in files found in zip.") << std::endl;
         return 1;
     }
 
@@ -1153,14 +1153,14 @@ inline int cmdTestDataImportZip(const std::string& dataDir, int problemId,
     for (const auto& [stem, inEntry] : inFiles) {
         auto outIt = outFiles.find(stem);
         if (outIt == outFiles.end()) {
-            std::cerr << "Warning: no matching .out/.ans for " << stem << ", skipped." << std::endl;
+            std::cerr << clijudge::lang::trf("problem.zip_no_matching_out", "Warning: no matching .out/.ans for {0}, skipped.", {stem}) << std::endl;
             continue;
         }
 
         std::string inContent, outContent;
         if (!zipReadEntry(zipPath, inEntry, inContent) ||
             !zipReadEntry(zipPath, outIt->second, outContent)) {
-            std::cerr << "Warning: failed to extract " << stem << ", skipped." << std::endl;
+            std::cerr << clijudge::lang::trf("problem.zip_extract_failed", "Warning: failed to extract {0}, skipped.", {stem}) << std::endl;
             continue;
         }
 
@@ -1177,26 +1177,26 @@ inline int cmdTestDataImportZip(const std::string& dataDir, int problemId,
         tc.subtaskId = 1;
 
         if (store.addTestCase(problemId, tc)) {
-            std::cout << "Test case imported: " << stem << " (ID: " << tc.id << ")" << std::endl;
+            std::cout << clijudge::lang::trf("problem.testcase_imported", "Test case imported: {0} (ID: {1})", {stem, std::to_string(tc.id)}) << std::endl;
             imported++;
         }
     }
 
     if (imported == 0) {
-        std::cerr << "No test cases imported." << std::endl;
+        std::cerr << clijudge::lang::tr("problem.no_testcases_imported", "No test cases imported.") << std::endl;
         return 1;
     }
-    std::cout << "Imported " << imported << " test case(s)." << std::endl;
+    std::cout << clijudge::lang::trf("problem.testcases_imported_count", "Imported {0} test case(s).", {std::to_string(imported)}) << std::endl;
     return 0;
 }
 
 inline int cmdTestDataDelete(const std::string& dataDir, int problemId, int testCaseId) {
     ProblemStore store(dataDir);
     if (store.deleteTestCase(problemId, testCaseId)) {
-        std::cout << "Test case " << testCaseId << " deleted." << std::endl;
+        std::cout << clijudge::lang::trf("problem.testcase_deleted", "Test case {0} deleted.", {std::to_string(testCaseId)}) << std::endl;
         return 0;
     } else {
-        std::cerr << "Test case " << testCaseId << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("problem.testcase_not_found", "Test case {0} not found.", {std::to_string(testCaseId)}) << std::endl;
         return 1;
     }
 }
@@ -1205,10 +1205,10 @@ inline int cmdTestDataSetAll(const std::string& dataDir, int problemId,
                              int timeLimit = -1, int memoryLimit = -1, int score = -1) {
     ProblemStore store(dataDir);
     if (store.setAllTestCaseDefaults(problemId, timeLimit, memoryLimit, score)) {
-        std::cout << "All test cases updated." << std::endl;
+        std::cout << clijudge::lang::tr("problem.all_testcases_updated", "All test cases updated.") << std::endl;
         return 0;
     } else {
-        std::cerr << "Failed to update test cases." << std::endl;
+        std::cerr << clijudge::lang::tr("problem.testcases_update_failed", "Failed to update test cases.") << std::endl;
         return 1;
     }
 }
@@ -1217,7 +1217,7 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
     ProblemStore store(dataDir);
     json problem = store.exportProblem(problemId);
     if (problem.is_null()) {
-        std::cerr << "Problem " << problemId << " not found." << std::endl;
+        std::cerr << clijudge::lang::trf("problem.not_found", "Problem {0} not found.", {std::to_string(problemId)}) << std::endl;
         return 1;
     }
 
@@ -1278,10 +1278,10 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
         files.insert(files.begin(), {"problem.json", jsonContent});
 
         if (zipCreate(outputPath, files)) {
-            std::cout << "Problem exported to: " << outputPath << std::endl;
+            std::cout << clijudge::lang::trf("problem.exported_to", "Problem exported to: {0}", {outputPath}) << std::endl;
             return 0;
         } else {
-            std::cerr << "Failed to create export file: " << outputPath << std::endl;
+            std::cerr << clijudge::lang::trf("problem.export_failed_path", "Failed to create export file: {0}", {outputPath}) << std::endl;
             return 1;
         }
     }
@@ -1291,10 +1291,10 @@ inline int cmdExport(const std::string& dataDir, int problemId, const std::strin
     if (f.is_open()) {
         f << exportData.dump(2);
         f.close();
-        std::cout << "Problem exported to: " << outputPath << std::endl;
+        std::cout << clijudge::lang::trf("problem.exported_to", "Problem exported to: {0}", {outputPath}) << std::endl;
         return 0;
     } else {
-        std::cerr << "Failed to create export file." << std::endl;
+        std::cerr << clijudge::lang::tr("problem.export_failed", "Failed to create export file.") << std::endl;
         return 1;
     }
 }
@@ -1308,15 +1308,16 @@ inline void warnExecutableComponents(const json& problemData) {
     }
     if (!has && p.contains("grader_files") && p["grader_files"].is_object() && !p["grader_files"].empty()) has = true;
     if (has) {
-        std::cerr << "Warning: this package contains special judge/interactor/generator/grader code, "
-                  << "which is executed in a trusted (reduced-isolation) mode during judging. "
-                  << "Only import packages from sources you trust." << std::endl;
+        std::cerr << clijudge::lang::tr("problem.package_trust_warning",
+                  "Warning: this package contains special judge/interactor/generator/grader code, "
+                  "which is executed in a trusted (reduced-isolation) mode during judging. "
+                  "Only import packages from sources you trust.") << std::endl;
     }
 }
 
 inline int cmdImport(const std::string& dataDir, const std::string& importPath) {
     if (!fs::exists(importPath)) {
-        std::cerr << "Import file not found: " << importPath << std::endl;
+        std::cerr << clijudge::lang::trf("problem.import_file_not_found", "Import file not found: {0}", {importPath}) << std::endl;
         return 1;
     }
 
@@ -1332,7 +1333,7 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         // ZIP 格式导入：读取 problem.json 并解析 testdata 引用
         std::string jsonContent;
         if (!zipReadEntry(importPath, "problem.json", jsonContent)) {
-            std::cerr << "No problem.json found in zip: " << importPath << std::endl;
+            std::cerr << clijudge::lang::trf("problem.zip_no_problem_json", "No problem.json found in zip: {0}", {importPath}) << std::endl;
             return 1;
         }
 
@@ -1340,7 +1341,7 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         try {
             problemData = json::parse(jsonContent);
         } catch (const json::parse_error& e) {
-            std::cerr << "Failed to parse problem.json in zip: " << e.what() << std::endl;
+            std::cerr << clijudge::lang::trf("problem.zip_parse_failed", "Failed to parse problem.json in zip: {0}", {std::string(e.what())}) << std::endl;
             return 1;
         }
         warnExecutableComponents(problemData);
@@ -1356,7 +1357,7 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
                     if (zipReadEntry(importPath, entry, content)) {
                         inData = content;
                     } else {
-                        std::cerr << "Missing zip entry: " << entry << std::endl;
+                        std::cerr << clijudge::lang::trf("problem.zip_missing_entry", "Missing zip entry: {0}", {entry}) << std::endl;
                         return 1;
                     }
                 }
@@ -1366,7 +1367,7 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
                     if (zipReadEntry(importPath, entry, content)) {
                         outData = content;
                     } else {
-                        std::cerr << "Missing zip entry: " << entry << std::endl;
+                        std::cerr << clijudge::lang::trf("problem.zip_missing_entry", "Missing zip entry: {0}", {entry}) << std::endl;
                         return 1;
                     }
                 }
@@ -1380,17 +1381,17 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         ProblemStore store(dataDir);
         int id = store.importProblem(problemData);
         if (id > 0) {
-            std::cout << "Problem imported with ID: " << id << std::endl;
+            std::cout << clijudge::lang::trf("problem.imported", "Problem imported with ID: {0}", {std::to_string(id)}) << std::endl;
             return 0;
         } else {
-            std::cerr << "Failed to import problem." << std::endl;
+            std::cerr << clijudge::lang::tr("problem.import_failed", "Failed to import problem.") << std::endl;
             return 1;
         }
     }
 
     std::ifstream f(importPath);
     if (!f.is_open()) {
-        std::cerr << "Failed to open import file." << std::endl;
+        std::cerr << clijudge::lang::tr("problem.import_open_failed", "Failed to open import file.") << std::endl;
         return 1;
     }
 
@@ -1399,7 +1400,7 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         f >> problemData;
         f.close();
     } catch (const json::parse_error& e) {
-        std::cerr << "Failed to parse import file: " << e.what() << std::endl;
+        std::cerr << clijudge::lang::trf("problem.import_parse_failed", "Failed to parse import file: {0}", {std::string(e.what())}) << std::endl;
         return 1;
     }
     if (problemData.is_object()) warnExecutableComponents(problemData);
@@ -1410,10 +1411,10 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         ProblemStore store(dataDir);
         int id = store.importProblem(problemData);
         if (id > 0) {
-            std::cout << "Problem imported with ID: " << id << std::endl;
+            std::cout << clijudge::lang::trf("problem.imported", "Problem imported with ID: {0}", {std::to_string(id)}) << std::endl;
             return 0;
         } else {
-            std::cerr << "Failed to import problem." << std::endl;
+            std::cerr << clijudge::lang::tr("problem.import_failed", "Failed to import problem.") << std::endl;
             return 1;
         }
     }
@@ -1422,15 +1423,15 @@ inline int cmdImport(const std::string& dataDir, const std::string& importPath) 
         ProblemStore store(dataDir);
         int id = store.importProblem(problemData);
         if (id > 0) {
-            std::cout << "Problem imported with ID: " << id << std::endl;
+            std::cout << clijudge::lang::trf("problem.imported", "Problem imported with ID: {0}", {std::to_string(id)}) << std::endl;
             return 0;
         } else {
-            std::cerr << "Failed to import problem." << std::endl;
+            std::cerr << clijudge::lang::tr("problem.import_failed", "Failed to import problem.") << std::endl;
             return 1;
         }
     }
     else {
-        std::cerr << "Invalid import format. Expected NoldOJ or CliJudge format." << std::endl;
+        std::cerr << clijudge::lang::tr("problem.import_invalid_format", "Invalid import format. Expected NoldOJ or CliJudge format.") << std::endl;
         return 1;
     }
 }

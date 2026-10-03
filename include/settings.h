@@ -36,6 +36,7 @@
 #include <cstdlib>
 #include "json.hpp"
 #include "platform.h"
+#include "lang.h"
 
 namespace clijudge {
 namespace settings {
@@ -248,9 +249,10 @@ inline json loadRawConfig() {
     try {
         json j = json::parse(content);
         if (j.is_object()) return j;
-        std::cerr << "Warning: " << configPath() << " is not a JSON object; using defaults." << std::endl;
+        std::cerr << clijudge::lang::trf("err.config_not_object", "Warning: {0} is not a JSON object; using defaults.", {configPath()}) << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "Warning: failed to parse " << configPath() << " (" << e.what() << "); using defaults." << std::endl;
+        std::cerr << clijudge::lang::trf("err.config_parse_failed", "Warning: failed to parse {0} ({1}); using defaults.",
+                                         {configPath(), e.what()}) << std::endl;
     }
     return json::object();
 }

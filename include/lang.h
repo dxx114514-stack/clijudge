@@ -12,6 +12,7 @@
 //   pull [langname]       拉取语言文件（不切换）
 
 #include <string>
+#include <vector>
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -35,6 +36,10 @@ namespace lang {
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
+
+// trf 前向声明: loadConfig/downloadLang 等早期函数先于定义使用它
+inline std::string trf(const std::string& key, const std::string& fallback,
+                       const std::vector<std::string>& args);
 
 // 仓库信息
 const std::string REPO_OWNER = "dxxjudges";
@@ -304,14 +309,14 @@ inline json loadConfig() {
         static bool warnedType = false;
         if (!warnedType) {
             warnedType = true;
-            std::cerr << "Warning: " << path << " is not a JSON object; using defaults." << std::endl;
+            std::cerr << trf("err.config_not_object", "Warning: {0} is not a JSON object; using defaults.", {path}) << std::endl;
         }
     } catch (...) {
         // 损坏的 config.json 静默回退会让用户困惑，明确告警一次
         static bool warned = false;
         if (!warned) {
             warned = true;
-            std::cerr << "Warning: failed to parse " << path << " (invalid JSON); using defaults." << std::endl;
+            std::cerr << trf("err.config_invalid_json", "Warning: failed to parse {0} (invalid JSON); using defaults.", {path}) << std::endl;
         }
     }
     return json{{"current_lang", ""}};
@@ -511,7 +516,7 @@ inline json getOnlineLangs() {
 inline bool downloadLang(const std::string& langName, bool* usedBuiltin = nullptr) {
     if (usedBuiltin) *usedBuiltin = false;
     if (!validLangName(langName)) {
-        std::cerr << "Invalid language name: " << langName << std::endl;
+        std::cerr << trf("err.invalid_lang_name", "Invalid language name: {0}", {langName}) << std::endl;
         return false;
     }
     std::string url = "https://raw.githubusercontent.com/" + REPO_OWNER + "/" + REPO_NAME + 
@@ -523,7 +528,7 @@ inline bool downloadLang(const std::string& langName, bool* usedBuiltin = nullpt
             content = builtinEnJson();
             if (usedBuiltin) *usedBuiltin = true;
         } else {
-            std::cerr << "Failed to download language file: " << langName << std::endl;
+            std::cerr << trf("err.download_lang_file_failed", "Failed to download language file: {0}", {langName}) << std::endl;
             return false;
         }
     }
@@ -535,12 +540,13 @@ inline bool downloadLang(const std::string& langName, bool* usedBuiltin = nullpt
         json probe = json::parse(content);
         if (!probe.is_object()) throw std::runtime_error("not an object");
     } catch (...) {
-        std::cerr << "Failed to download language file: " << langName
-                  << " (response is not a valid language pack)" << std::endl;
+        std::cerr << trf("err.download_lang_file_invalid",
+                         "Failed to download language file: {0} (response is not a valid language pack)",
+                         {langName}) << std::endl;
         return false;
     }
     if (!writeFile(path, content)) {
-        std::cerr << "Failed to save language file: " << langName << std::endl;
+        std::cerr << trf("err.save_lang_failed", "Failed to save language file: {0}", {langName}) << std::endl;
         return false;
     }
     
@@ -643,15 +649,29 @@ inline std::string tr(const std::string& key, const std::string& fallback = "") 
     return fallback.empty() ? key : fallback;
 }
 
+// 带占位符翻译: 译文/回退串里的 {0} {1} ... 按序替换为实参。
+// 用于含编号/路径的输出消息, 避免一条消息拆成前后两个 key。
+inline std::string trf(const std::string& key, const std::string& fallback,
+                       const std::vector<std::string>& args) {
+    std::string s = tr(key, fallback);
+    for (size_t i = 0; i < args.size(); i++) {
+        std::string ph = "{" + std::to_string(i) + "}";
+        size_t p = s.find(ph);
+        if (p == std::string::npos) continue;
+        s.replace(p, ph.size(), args[i]);
+    }
+    return s;
+}
+
 // ── 子命令实现 ────────────────────────────────────────────────
 
 // list - 显示本地/在线语言
 inline int cmdList(bool online = false) {
     if (online) {
-        std::cout << "Online languages:" << std::endl;
+        std::cout << tr("displaylang.online_header", "Online languages:") << std::endl;
         json langs = getOnlineLangs();
         if (langs.empty()) {
-            std::cout << "  (none or network error)" << std::endl;
+            std::cout << tr("displaylang.online_none", "  (none or network error)") << std::endl;
             return 0;
         }
         std::string current = getCurrentLang();
@@ -661,15 +681,15 @@ inline int cmdList(bool online = false) {
             std::cout << "  " << name << marker << std::endl;
         }
         std::cout << std::endl;
-        std::cout << "* = currently active" << std::endl;
+        std::cout << tr("displaylang.active_marker", "* = currently active") << std::endl;
     } else {
-        std::cout << "Local languages:" << std::endl;
+        std::cout << tr("displaylang.local_header", "Local languages:") << std::endl;
         json langs = getLocalLangs();
         if (langs.empty()) {
-            std::cout << "  (none)" << std::endl;
+            std::cout << tr("displaylang.local_none", "  (none)") << std::endl;
             std::cout << std::endl;
-            std::cout << "Use 'clijudge displaylang list --online' to see available languages." << std::endl;
-            std::cout << "Use 'clijudge displaylang switch [langname]' to download and activate." << std::endl;
+            std::cout << tr("displaylang.hint_list", "Use 'clijudge displaylang list --online' to see available languages.") << std::endl;
+            std::cout << tr("displaylang.hint_switch", "Use 'clijudge displaylang switch [langname]' to download and activate.") << std::endl;
             return 0;
         }
         std::string current = getCurrentLang();
@@ -681,7 +701,7 @@ inline int cmdList(bool online = false) {
             std::cout << "  " << name << " (" << display << ") v" << version << marker << std::endl;
         }
         std::cout << std::endl;
-        std::cout << "* = currently active" << std::endl;
+        std::cout << tr("displaylang.active_marker", "* = currently active") << std::endl;
     }
     return 0;
 }
@@ -689,21 +709,21 @@ inline int cmdList(bool online = false) {
 // switch - 切换语言
 inline int cmdSwitch(const std::string& langName) {
     if (langName.empty()) {
-        std::cerr << "Usage: clijudge displaylang switch [langname]" << std::endl;
+        std::cerr << tr("usage.displaylang_switch", "Usage: clijudge displaylang switch [langname]") << std::endl;
         return 1;
     }
     
     // 检查本地是否已有
     std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
     if (!fs::exists(path)) {
-        std::cout << "Language '" << langName << "' not found locally. Downloading..." << std::endl;
+        std::cout << trf("displaylang.not_found_downloading", "Language '{0}' not found locally. Downloading...", {langName}) << std::endl;
         bool usedBuiltin = false;
         if (!downloadLang(langName, &usedBuiltin)) {
-            std::cerr << "Failed to download language: " << langName << std::endl;
+            std::cerr << trf("err.download_lang_failed", "Failed to download language: {0}", {langName}) << std::endl;
             return 1;
         }
         if (usedBuiltin) {
-            std::cout << "Using built-in language pack." << std::endl;
+            std::cout << tr("displaylang.using_builtin", "Using built-in language pack.") << std::endl;
         } else {
             std::cout << tr("success.downloaded", "Downloaded successfully") << "." << std::endl;
         }
@@ -712,7 +732,7 @@ inline int cmdSwitch(const std::string& langName) {
     // 验证文件有效
     json langData = loadLang(langName);
     if (langData.is_null()) {
-        std::cerr << "Invalid language file: " << langName << std::endl;
+        std::cerr << trf("err.invalid_lang_file", "Invalid language file: {0}", {langName}) << std::endl;
         return 1;
     }
     
@@ -722,7 +742,7 @@ inline int cmdSwitch(const std::string& langName) {
     if (saveConfig(config)) {
         std::cout << tr("success.switched", "Switched to language") << ": " << langName << std::endl;
     } else {
-        std::cerr << "Failed to save configuration." << std::endl;
+        std::cerr << tr("err.save_config_failed", "Failed to save configuration.") << std::endl;
         return 1;
     }
     
@@ -732,25 +752,26 @@ inline int cmdSwitch(const std::string& langName) {
 // delete - 删除本地语言
 inline int cmdDelete(const std::string& langName) {
     if (langName.empty()) {
-        std::cerr << "Usage: clijudge displaylang delete [langname]" << std::endl;
+        std::cerr << tr("usage.displaylang_delete", "Usage: clijudge displaylang delete [langname]") << std::endl;
         return 1;
     }
     if (!validLangName(langName)) {
-        std::cerr << "Invalid language name: " << langName << std::endl;
+        std::cerr << trf("err.invalid_lang_name", "Invalid language name: {0}", {langName}) << std::endl;
         return 1;
     }
     // en 为内置语言（二进制内嵌 + 离线回退），本地文件只是缓存副本，
     // 删除只会清空 current_lang 逼用户重新 switch，没有意义
     if (langName == "en") {
-        std::cerr << "Built-in language 'en' cannot be deleted. "
-                  << "Use 'clijudge displaylang switch [langname]' to change language, "
-                  << "or 'clijudge displaylang pull en' to refresh the local copy." << std::endl;
+        std::cerr << tr("displaylang.builtin_en_delete",
+                        "Built-in language 'en' cannot be deleted. "
+                        "Use 'clijudge displaylang switch [langname]' to change language, "
+                        "or 'clijudge displaylang pull en' to refresh the local copy.") << std::endl;
         return 1;
     }
 
     std::string path = platform::pathJoin(getLangsDir(), langName + ".cjl");
     if (!fs::exists(path)) {
-        std::cerr << "Language file not found: " << langName << std::endl;
+        std::cerr << trf("err.lang_file_not_found", "Language file not found: {0}", {langName}) << std::endl;
         return 1;
     }
     
@@ -760,13 +781,13 @@ inline int cmdDelete(const std::string& langName) {
         json config = loadConfig();
         config["current_lang"] = "";
         saveConfig(config);
-        std::cout << "Deactivated current language." << std::endl;
+        std::cout << tr("displaylang.deactivated", "Deactivated current language.") << std::endl;
     }
     
     if (fs::remove(path)) {
-        std::cout << "Deleted language: " << langName << std::endl;
+        std::cout << trf("displaylang.deleted", "Deleted language: {0}", {langName}) << std::endl;
     } else {
-        std::cerr << "Failed to delete language file." << std::endl;
+        std::cerr << tr("err.delete_lang_failed", "Failed to delete language file.") << std::endl;
         return 1;
     }
     
@@ -776,15 +797,15 @@ inline int cmdDelete(const std::string& langName) {
 // pull - 拉取语言文件（不切换）
 inline int cmdPull(const std::string& langName) {
     if (langName.empty()) {
-        std::cerr << "Usage: clijudge displaylang pull [langname]" << std::endl;
+        std::cerr << tr("usage.displaylang_pull", "Usage: clijudge displaylang pull [langname]") << std::endl;
         return 1;
     }
     
-    std::cout << "Downloading language: " << langName << "..." << std::endl;
+    std::cout << trf("displaylang.downloading", "Downloading language: {0}...", {langName}) << std::endl;
     if (downloadLang(langName)) {
-        std::cout << "Updated language: " << langName << std::endl;
+        std::cout << trf("displaylang.updated", "Updated language: {0}", {langName}) << std::endl;
     } else {
-        std::cerr << "Failed to download language: " << langName << std::endl;
+        std::cerr << trf("err.download_lang_failed", "Failed to download language: {0}", {langName}) << std::endl;
         return 1;
     }
     
@@ -806,7 +827,7 @@ inline void showNoLangError() {
     std::cerr << std::endl;
     std::cerr << tr("error.no_lang_hint", "Please run: clijudge displaylang switch [langname]") << std::endl;
     std::cerr << tr("error.no_lang_list", "Use 'clijudge displaylang list --online' to see available languages.") << std::endl;
-    std::cerr << "Offline fallback: clijudge displaylang switch en" << std::endl;
+    std::cerr << tr("displaylang.offline_fallback", "Offline fallback: clijudge displaylang switch en") << std::endl;
 }
 
 } // namespace lang

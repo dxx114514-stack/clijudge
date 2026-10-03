@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <filesystem>
 #include "json.hpp"
+#include "lang.h"
 #include "platform.h"
 
 namespace clijudge {
@@ -74,7 +75,7 @@ private:
         ensureDataDir();
         std::string indexPath = dataDir + "/submissions/submissions.json";
         if (!platform::writeFileAtomic(indexPath, data.dump(2))) {
-            std::cerr << "Warning: failed to write " << indexPath << std::endl;
+            std::cerr << clijudge::lang::trf("submit.write_failed", "Warning: failed to write {0}", {indexPath}) << std::endl;
         }
     }
 

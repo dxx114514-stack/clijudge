@@ -574,7 +574,7 @@ inline CompileResult compileCustomLanguage(const settings::CustomLanguage& lang,
     json meta = readMetaFile(metaFile);
     if (meta.is_null()) {
         result.error = "System Error: compiler did not run";
-        std::cerr << "[compile] system error: " << compiler << std::endl;
+        std::cerr << clijudge::lang::trf("judge.compile_system_error", "[compile] system error: {0}", {compiler}) << std::endl;
         return result;
     }
     std::string signal = meta.value("signal", "null");
@@ -584,17 +584,17 @@ inline CompileResult compileCustomLanguage(const settings::CustomLanguage& lang,
 
     if (signal == "SIGKILL") {
         result.error = "Compilation Time Limit Exceeded";
-        std::cerr << "[compile] time limit exceeded" << std::endl;
+        std::cerr << clijudge::lang::tr("judge.compile_time_limit", "[compile] time limit exceeded") << std::endl;
         return result;
     }
     if (signal == "PROC_LIMIT") {
         result.error = "Compilation failed: process limit exceeded";
-        std::cerr << "[compile] process limit exceeded" << std::endl;
+        std::cerr << clijudge::lang::tr("judge.compile_proc_limit", "[compile] process limit exceeded") << std::endl;
         return result;
     }
     if (signal == "SYSTEM_ERROR") {
         result.error = "System Error during compilation";
-        std::cerr << "[compile] system error" << std::endl;
+        std::cerr << clijudge::lang::tr("judge.compile_system_error_plain", "[compile] system error") << std::endl;
         return result;
     }
     if (exitCode != 0) {
@@ -616,7 +616,7 @@ inline CompileResult compileCustomLanguage(const settings::CustomLanguage& lang,
     }
     if (usesExe && !fs::exists(exePath)) {
         result.error = "Compilation produced no output";
-        std::cerr << "[compile] produced no output" << std::endl;
+        std::cerr << clijudge::lang::tr("judge.compile_no_output", "[compile] produced no output") << std::endl;
         return result;
     }
     result.exePath = rArgv.front();
@@ -735,7 +735,7 @@ inline CompileResult compileSources(const std::vector<std::string>& sources,
     json meta = readMetaFile(metaFile);
     if (meta.is_null()) {
         result.error = "System Error: compiler did not run";
-        std::cerr << "[compile] system error: " << compiler << std::endl;
+        std::cerr << clijudge::lang::trf("judge.compile_system_error", "[compile] system error: {0}", {compiler}) << std::endl;
         return result;
     }
     std::string signal = meta.value("signal", "null");
@@ -745,17 +745,17 @@ inline CompileResult compileSources(const std::vector<std::string>& sources,
 
     if (signal == "SIGKILL") {
         result.error = "Compilation Time Limit Exceeded";
-        std::cerr << "[compile] time limit exceeded" << std::endl;
+        std::cerr << clijudge::lang::tr("judge.compile_time_limit", "[compile] time limit exceeded") << std::endl;
         return result;
     }
     if (signal == "PROC_LIMIT") {
         result.error = "Compilation failed: process limit exceeded";
-        std::cerr << "[compile] process limit exceeded" << std::endl;
+        std::cerr << clijudge::lang::tr("judge.compile_proc_limit", "[compile] process limit exceeded") << std::endl;
         return result;
     }
     if (signal == "SYSTEM_ERROR") {
         result.error = "System Error during compilation";
-        std::cerr << "[compile] system error" << std::endl;
+        std::cerr << clijudge::lang::tr("judge.compile_system_error_plain", "[compile] system error") << std::endl;
         return result;
     }
     if (exitCode != 0) {
@@ -772,7 +772,7 @@ inline CompileResult compileSources(const std::vector<std::string>& sources,
         std::string classFile = platform::pathJoin(workDir, mainClass + ".class");
         if (!fs::exists(classFile)) {
             result.error = "Compilation produced no output";
-            std::cerr << "[compile] produced no output" << std::endl;
+            std::cerr << clijudge::lang::tr("judge.compile_no_output", "[compile] produced no output") << std::endl;
             return result;
         }
         // 运行: java -cp <workDir> <MainClass>
@@ -781,7 +781,7 @@ inline CompileResult compileSources(const std::vector<std::string>& sources,
     } else {
         if (!fs::exists(exePath)) {
             result.error = "Compilation produced no output";
-            std::cerr << "[compile] produced no output" << std::endl;
+            std::cerr << clijudge::lang::tr("judge.compile_no_output", "[compile] produced no output") << std::endl;
             return result;
         }
         result.exePath = exePath;
@@ -2295,7 +2295,7 @@ inline json resultToJson(const JudgeResult& result) {
 
 // ── 显示评判结果 ─────────────────────────────────────────────
 inline void printResult(const JudgeResult& result) {
-    std::cout << "=== Judge Result ===" << std::endl;
+    std::cout << clijudge::lang::tr("judge.result_header", "=== Judge Result ===") << std::endl;
     std::cout << clijudge::lang::tr("judge.score", "Score") << ": "
               << result.totalScore << " / " << result.maxScore << std::endl;
     std::cout << clijudge::lang::tr("judge.status", "Status") << ": " << statusToAbbr(result.status)
@@ -2304,18 +2304,20 @@ inline void printResult(const JudgeResult& result) {
     std::cout << clijudge::lang::tr("judge.memory", "Memory") << ": " << result.maxMemoryKB << " KB" << std::endl;
 
     if (!result.compileError.empty()) {
-        std::cout << "Compile Error: " << result.compileError << std::endl;
+        std::cout << clijudge::lang::trf("judge.compile_error_detail", "Compile Error: {0}", {result.compileError}) << std::endl;
     }
 
     for (const auto& st : result.subtasks) {
-        std::cout << "\n--- Subtask " << st.id << " ---" << std::endl;
+        std::cout << clijudge::lang::trf("judge.subtask_header", "\n--- Subtask {0} ---", {std::to_string(st.id)}) << std::endl;
         std::cout << clijudge::lang::tr("judge.score", "Score") << ": "
                   << st.score << " / " << st.maxScore << std::endl;
         std::cout << clijudge::lang::tr("judge.status", "Status") << ": " << statusToAbbr(st.status) << std::endl;
 
         for (const auto& tc : st.testCases) {
-            std::cout << "  Test " << tc.id << ": " << statusToAbbr(tc.status)
-                      << " (" << tc.timeUsedMs << " ms, " << tc.memoryUsedKB << " KB)"
+            std::cout << clijudge::lang::trf("judge.test_result",
+                                             "  Test {0}: {1} ({2} ms, {3} KB)",
+                                             {std::to_string(tc.id), statusToAbbr(tc.status),
+                                              std::to_string(tc.timeUsedMs), std::to_string(tc.memoryUsedKB)})
                       << std::endl;
         }
     }

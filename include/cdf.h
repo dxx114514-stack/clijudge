@@ -30,6 +30,7 @@
 #include <filesystem>
 #include <algorithm>
 #include "json.hpp"
+#include "lang.h"
 
 namespace clijudge {
 namespace cdf {
@@ -192,7 +193,7 @@ inline CdfContest parseCdf(const std::string& cdfPath) {
     CdfContest contest;
     std::ifstream f(cdfPath);
     if (!f.is_open()) {
-        std::cerr << "Failed to open CDF file: " << cdfPath << std::endl;
+        std::cerr << clijudge::lang::trf("cdf.open_failed", "Failed to open CDF file: {0}", {cdfPath}) << std::endl;
         return contest;
     }
 
@@ -200,7 +201,7 @@ inline CdfContest parseCdf(const std::string& cdfPath) {
     try {
         f >> data;
     } catch (const json::parse_error& e) {
-        std::cerr << "Failed to parse CDF file: " << e.what() << std::endl;
+        std::cerr << clijudge::lang::trf("cdf.parse_failed", "Failed to parse CDF file: {0}", {e.what()}) << std::endl;
         return contest;
     }
 
