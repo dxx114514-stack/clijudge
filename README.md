@@ -2,7 +2,7 @@
 
 轻量级命令行在线评测系统（Windows / Linux 双平台）
 
-预编译二进制见 [Releases](https://github.com/dxxjudges/clijudge/releases)（`clijudge.exe` / `clijudge-linux.bin`）。
+预编译二进制见 [Releases](https://github.com/dxxjudges/clijudge/releases)（`clijudge.exe` / `clijudge-linux.bin`），或 `npm install -g clijudge`（Windows / Linux，安装后直接使用 `clijudge` 命令）。
 
 ## 功能特性
 

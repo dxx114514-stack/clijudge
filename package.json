@@ -1,0 +1,44 @@
+{
+  "name": "clijudge",
+  "version": "1.1.2",
+  "description": "CliJudge - lightweight command-line local judge: single binary, Windows/Linux sandboxed judging, LemonLime CDF, JSON storage",
+  "keywords": [
+    "judge",
+    "oj",
+    "online-judge",
+    "competitive-programming",
+    "icpc",
+    "oi",
+    "cli",
+    "sandbox",
+    "lemonlime"
+  ],
+  "homepage": "https://jl.dxxj.de5.net/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dxxjudges/clijudge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dxxjudges/clijudge/issues"
+  },
+  "license": "MIT",
+  "bin": {
+    "clijudge": "bin/clijudge.js"
+  },
+  "files": [
+    "bin/",
+    "prebuilds/windows/clijudge.exe",
+    "prebuilds/linux/clijudge-linux.bin",
+    "LICENSE"
+  ],
+  "os": [
+    "win32",
+    "linux"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "scripts": {
+    "prepublishOnly": "node scripts/prepublish-check.js"
+  }
+}

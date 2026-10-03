@@ -5,3 +5,6 @@ test_export.cdf
 *.zip
 clijudge
 clijudge_linux
+prebuilds/
+dist/
+*.tgz
