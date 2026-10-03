@@ -263,6 +263,7 @@
         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
         下载最新版本
       </a>
+      <a class="btn btn-ghost" href="https://www.npmjs.com/package/clijudge" target="_blank" rel="noopener">npm 安装</a>
       <a class="btn btn-ghost" href="#features">查看功能</a>
       <a class="btn btn-ghost" href="https://github.com/dxxjudges/clijudge" target="_blank" rel="noopener">GitHub 仓库
         <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
@@ -437,8 +438,11 @@
     <div class="setup reveal">
       <div class="code-block">
         <div class="bar"><i></i><i></i><i></i></div>
-        <pre><code># 0. 直接下载 Release（推荐）：clijudge.exe / clijudge-linux.bin
-#    https://github.com/dxxjudges/clijudge/releases
+        <pre><code># 0. 安装（推荐 npm，需 Node.js ≥ 14，自动安装对应平台预编译二进制）
+npm install -g clijudge
+
+# 0b. 或从 Release 下载：clijudge.exe / clijudge-linux.bin
+#     https://github.com/dxxjudges/clijudge/releases
 
 # 1. 或从源码构建
 git clone https://github.com/dxxjudges/clijudge.git
@@ -458,7 +462,7 @@ mkdir build && cd build && cmake .. && cmake --build .
 ./clijudge.exe problem submit 1 solution.cpp</code></pre>
       </div>
       <ol>
-        <li>在 <a href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">Releases</a> 下载预编译二进制（<code>clijudge.exe</code> / <code>clijudge-linux.bin</code>），或克隆源码自行编译</li>
+        <li>安装：<code>npm install -g clijudge</code>（需 Node.js ≥ 14，含双平台预编译二进制），或在 <a href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">Releases</a> 下载 <code>clijudge.exe</code> / <code>clijudge-linux.bin</code>，或克隆源码自行编译</li>
         <li>源码编译需 <a href="https://www.mingw-w64.org/" target="_blank" rel="noopener" style="color: var(--accent-2);">MinGW-w64</a> + <a href="https://cmake.org/" target="_blank" rel="noopener" style="color: var(--accent-2);">CMake</a>（Windows）或 g++（Linux），亦可按下方 g++ 单命令直接编译</li>
         <li>运行 <code>./clijudge.exe help</code> 查看帮助</li>
         <li>创建题目、添加测试数据并提交评测</li>
@@ -547,7 +551,7 @@ mkdir build && cd build && cmake .. && cmake --build .
     <div class="reveal">
       <details open>
         <summary>如何安装 CliJudge？</summary>
-        <p>在 <a href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">Releases</a> 下载 <code>clijudge.exe</code>（Windows）或 <code>clijudge-linux.bin</code>（Linux，重命名后加执行位）直接使用；或克隆源码编译：Windows 用 CMake + MinGW-w64（<code>mkdir build && cd build && cmake .. && cmake --build .</code>），Linux 用 <code>g++ -std=c++17 -O2 -Wall -I include -o clijudge src/main.cpp</code>。</p>
+        <p>推荐 <code>npm install -g clijudge</code> 一键安装（需 Node.js ≥ 14，自动安装对应平台预编译二进制）。也可在 <a href="https://github.com/dxxjudges/clijudge/releases" target="_blank" rel="noopener" style="color: var(--accent-2);">Releases</a> 下载 <code>clijudge.exe</code>（Windows）或 <code>clijudge-linux.bin</code>（Linux，重命名后加执行位）直接使用；或克隆源码编译：Windows 用 CMake + MinGW-w64（<code>mkdir build && cd build && cmake .. && cmake --build .</code>），Linux 用 <code>g++ -std=c++17 -O2 -Wall -I include -o clijudge src/main.cpp</code>。</p>
       </details>
       <details>
         <summary>支持哪些编程语言？</summary>
