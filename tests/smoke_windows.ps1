@@ -151,6 +151,18 @@ Check "corrupt config warns" ($r.out -match "Warning: failed to parse .*config\.
 $r = Run @("problem", "count")
 Check "restored config clean" (($r.code -eq 0) -and (-not ($r.out -match "Warning:"))) "code=$($r.code) out=$($r.out)"
 
+# T18 non-ASCII argv/path: Chinese title roundtrip + Chinese zip name (UTF-8 console/argv)
+$r = Run @("problem", "create", "中文标题测试")
+$zhId = 0
+if ($r.out -match "Problem created with ID: (\d+)") { $zhId = [int]$Matches[1] }
+Check "zh create" ($zhId -gt 0) $r.out
+$zhIdx = [IO.File]::ReadAllText("$data\problems\problems.json", [Text.UTF8Encoding]::new($false))
+Check "zh title stored UTF-8" ($zhIdx -match "中文标题测试") ""
+$r = Run @("problem", "export", "$zhId", "$work\中文导出.zip")
+Check "zh export path" (($r.code -eq 0) -and (Test-Path "$work\中文导出.zip")) $r.out
+$r = Run @("problem", "delete", "$zhId")
+Check "zh delete" ($r.out -match "Problem $zhId deleted\.") $r.out
+
 Write-Host ""
 Write-Host "PASS: $script:pass  FAIL: $script:fail"
 Remove-Item -Path $root -Recurse -Force -ErrorAction SilentlyContinue

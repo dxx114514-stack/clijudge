@@ -192,6 +192,36 @@ bool isMutationCommand(const std::string& command, int argc, char* argv[]) {
 
 // 主函数
 int main(int argc, char* argv[]) {
+    // 控制台切到 UTF-8（本地化文案在 GBK 控制台下乱码）；退出时自动恢复
+    clijudge::platform::initConsoleUtf8();
+
+    // argv 从宽字符命令行重建为 UTF-8：不依赖 CRT 按 ANSI 代码页（中文系统 GBK）
+    // 转换命令行，否则中文标题会以非法 UTF-8 进入 JSON 导致崩溃
+#ifdef _WIN32
+    {
+        int wargc = 0;
+        LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+        if (wargv) {
+            static std::vector<std::string> argStorage;
+            static std::vector<char*> argPtrs;
+            argStorage.reserve((size_t)wargc);
+            for (int i = 0; i < wargc; i++) {
+                int n = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, nullptr, 0, nullptr, nullptr);
+                std::string s(n > 0 ? (size_t)n : 0, '\0');
+                if (n > 0) WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, &s[0], n, nullptr, nullptr);
+                if (n > 0 && !s.empty()) s.pop_back();
+                argStorage.push_back(std::move(s));
+            }
+            LocalFree(wargv);
+            argPtrs.reserve(argStorage.size() + 1);
+            for (auto& s : argStorage) argPtrs.push_back(&s[0]);
+            argPtrs.push_back(nullptr);
+            argc = wargc;
+            argv = argPtrs.data();
+        }
+    }
+#endif
+
     // 检查参数数量
     if (argc < 2) {
         showHelp();

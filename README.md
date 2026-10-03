@@ -87,7 +87,8 @@ cmake --build .
 Windows:
 
 ```bash
-g++ -std=c++17 -O2 -Wall -static -I include -o clijudge.exe src/main.cpp -lpsapi -luserenv -lole32 -lwinhttp
+windres src/clijudge.rc -O coff -o clijudge_res.o
+g++ -std=c++17 -O2 -Wall -static -I include -o clijudge.exe src/main.cpp clijudge_res.o -lpsapi -luserenv -lole32 -lwinhttp
 ```
 
 Linux:

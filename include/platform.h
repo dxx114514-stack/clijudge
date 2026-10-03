@@ -23,6 +23,7 @@
 #define NTDDI_VERSION 0x06000000
 #endif
 #include <windows.h>
+#include <shellapi.h>
 #else
 #include <unistd.h>
 #include <fcntl.h>
@@ -110,6 +111,25 @@ inline std::string dataDir() {
         return pathJoin(exe, "data");
     }
     return pathJoin(".", "data");
+}
+
+// 控制台代码页切换为 UTF-8（Windows），进程退出时恢复原值。
+// 否则 tr() 输出的中文在 GBK(936) 控制台显示为乱码；
+// 输出重定向到文件/管道时代码页不参与，字节流不受影响。
+inline void initConsoleUtf8() {
+#ifdef _WIN32
+    struct State {
+        UINT outCp = GetConsoleOutputCP();
+        UINT inCp = GetConsoleCP();
+        ~State() {
+            if (outCp) SetConsoleOutputCP(outCp);
+            if (inCp) SetConsoleCP(inCp);
+        }
+    };
+    static State st;
+    if (st.outCp) SetConsoleOutputCP(CP_UTF8);
+    if (st.inCp) SetConsoleCP(CP_UTF8);
+#endif
 }
 
 // 旧版平铺布局迁移（幂等）：data/*.json → data/<类别>/*.json

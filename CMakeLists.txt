@@ -18,6 +18,9 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 add_executable(clijudge src/main.cpp)
 
 if(WIN32)
+  # UTF-8 代码页 manifest（argv/文件路径 UTF-8），随 RC 编译嵌入 exe
+  enable_language(RC)
+  target_sources(clijudge PRIVATE src/clijudge.rc)
   target_compile_definitions(clijudge PRIVATE WINVER=0x0600 _WIN32_WINNT=0x0600)
   target_link_libraries(clijudge psapi userenv ole32 winhttp)
   # 对齐 CI 的 -static（MinGW）

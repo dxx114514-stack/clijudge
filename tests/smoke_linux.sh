@@ -172,6 +172,16 @@ run problem testdata "$BGID" create "$W/in.txt" "$W/out.txt" 1000 256 50
 run problem submit "$BGID" "$W/b.bglang" --as bob
 [ $CODE -eq 0 ] && echo "$OUT" | grep -q "Status: AC"; t "bare custom-lang submit AC" $? "code=$CODE $OUT"
 
+# non-ASCII argv/path: Chinese title roundtrip + Chinese zip export
+run problem create "中文标题测试"
+ZID=$(echo "$OUT" | sed -n 's/.*Problem created with ID: \([0-9]*\).*/\1/p' | head -1)
+[ -n "$ZID" ]; t "zh create" $? "$OUT"
+grep -q "中文标题测试" "$CLIJUDGE_DATA_DIR/problems/problems.json"; t "zh title UTF-8" $?
+run problem export "$ZID" "$W/中文导出.zip"
+[ $CODE -eq 0 ] && [ -f "$W/中文导出.zip" ]; t "zh export path" $? "$OUT"
+run problem delete "$ZID"
+echo "$OUT" | grep -q "Problem $ZID deleted\."; t "zh delete" $? "$OUT"
+
 echo ""
 echo "PASS: $pass  FAIL: $fail"
 if [ -s "$CLIJUDGE_SANDBOX_DEBUG" ]; then
