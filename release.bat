@@ -6,9 +6,14 @@ cd /d "%~dp0"
 rem ============================================================
 rem   release.bat - one-click release
 rem   usage: release.bat major|minor|patch
-rem   does:  npm version (bump+commit+tag) -> push -> wait CI
-rem   commit message "build X.Y.Z" triggers:
-rem     GitHub Release vX.Y.Z + npm publish (npm-publish.yml)
+rem   does:  npm version (bump package.json only) -> commit "build X.Y.Z"
+rem   -> tag vX.Y.Z -> push -> wait CI
+rem   commit message "build X.Y.Z" triggers GitHub Release vX.Y.Z;
+rem   npm Publish is dispatched explicitly by this script, because a
+rem   release created with GITHUB_TOKEN does not trigger other workflows
+rem   (GitHub anti-recursion: release: published never fires here)
+rem   note: never let npm do the commit - "call" double-expands percents
+rem   and turned "-m build %%s" into a literal "build s" commit once
 rem ============================================================
 
 set "ARG=%~1"
@@ -35,12 +40,21 @@ echo.
 choice /c YN /n /m "Proceed? [Y/N] "
 if errorlevel 2 (echo cancelled. & exit /b 1)
 
-call npm version %ARG% -m "build %%s"
+rem npm only rewrites package.json here; commit + tag are done explicitly
+rem below, because "call" double-expands percents: "-m build %%s" turned
+rem into a literal "build s" commit once (never let npm create the commit)
+call npm version %ARG% --no-git-tag-version
 if errorlevel 1 (echo [ERROR] npm version failed & goto :fail)
 
 for /f "delims=" %%v in ('node -p "require('./package.json').version"') do set "NEW=%%v"
+git add package.json
+git commit -m "build %NEW%"
+if errorlevel 1 (echo [ERROR] git commit failed & goto :fail)
+git tag -a v%NEW% -m "v%NEW%"
+if errorlevel 1 (echo [ERROR] git tag failed & goto :fail)
+
 echo.
-echo [OK] version %CUR% -> %NEW%, pushed tags pending...
+echo [OK] version %CUR% -> %NEW%, tag v%NEW% ready to push...
 
 git push origin main --follow-tags
 if errorlevel 1 (echo [ERROR] git push failed - fix manually, local commit/tag already created & goto :fail)
@@ -65,13 +79,18 @@ gh run watch %RUNID% --exit-status
 if errorlevel 1 (echo [ERROR] Build and Release FAILED - run: gh run view %RUNID% & goto :fail)
 echo [OK] Build and Release succeeded
 
-echo [2/3] waiting for "npm Publish" run (triggered by the release)...
+echo [2/3] dispatching "npm Publish" workflow...
+rem release.yml creates the GH Release with GITHUB_TOKEN -> GitHub suppresses
+rem that event (workflows triggered by GITHUB_TOKEN never run) -> dispatch it
+gh workflow run npm-publish.yml --ref main
+if errorlevel 1 (echo [ERROR] failed to dispatch npm Publish & goto :fail)
+
 set /a TRY=0
 :poll_npm
 set /a TRY+=1
-if %TRY% GTR 72 (echo [ERROR] timeout waiting for npm Publish run & goto :fail)
+if %TRY% GTR 36 (echo [ERROR] timeout waiting for dispatched npm Publish run & goto :fail)
 set "RUNSHA="
-for /f "delims=" %%i in ('gh run list --workflow "npm Publish" --limit 1 --json headSha --jq ".[0].headSha" 2^>nul') do set "RUNSHA=%%i"
+for /f "delims=" %%i in ('gh run list --workflow "npm Publish" --event workflow_dispatch --limit 1 --json headSha --jq ".[0].headSha" 2^>nul') do set "RUNSHA=%%i"
 if /i "%RUNSHA%"=="%HEADSHA%" goto :watch_npm
 timeout /t 5 /nobreak >nul
 goto :poll_npm
