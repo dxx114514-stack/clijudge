@@ -45,6 +45,21 @@ int main(){long long a,b;std::cin>>a>>b;std::cout<<a+b<<std::endl;return 0;}'
 $r = Run @("problem", "submit", "1", "$work\ac.cpp", "--as", "alice")
 Check "submit AC" (($r.code -eq 0) -and ($r.out -match "Status: AC")) "code=$($r.code) out=$($r.out)"
 
+# T04b submission cwd must not contain test data files (answer-leak regression)
+$leakSrc = @'
+#include <stdio.h>
+int main(){
+  const char* f[]={"test_input.txt","test_expected.txt","data.in","data.out"};
+  for(int i=0;i<4;i++){FILE* p=fopen(f[i],"rb"); if(p){fclose(p); puts("LEAK"); return 0;}}
+  long long a,b;
+  if(scanf("%lld %lld",&a,&b)==2) printf("%lld\n",a+b); else printf("3\n");
+  return 0;
+}
+'@
+W "$work\leak.cpp" $leakSrc
+$r = Run @("problem", "submit", "1", "$work\leak.cpp", "--as", "alice")
+Check "submit cwd no test data" (($r.code -eq 0) -and ($r.out -match "Status: AC")) "code=$($r.code) out=$($r.out)"
+
 # T05 export
 $r = Run @("problem", "export", "1", "$work\p1.zip")
 Check "problem export" ($r.out -match "Problem exported to:") $r.out
@@ -242,6 +257,27 @@ $r = Run @("displaylang", "source", "custom")
 Check "source custom no-url usage" (($r.code -eq 1) -and ($r.out -match "Usage: clijudge displaylang source custom")) "code=$($r.code) out=$($r.out)"
 $r = Run @("displaylang", "source", "custom", "not-a-url")
 Check "source custom invalid url" (($r.code -eq 1) -and ($r.out -match "Invalid source URL: not-a-url")) "code=$($r.code) out=$($r.out)"
+
+# T24 SPJ: input/expected written to dataDir after contestant run (SPJ checks actual == "3\n")
+$spjChecker = '#include <stdio.h>
+int main(int argc,char**argv){if(argc<3)return 1;FILE*f=fopen(argv[2],"rb");if(!f)return 1;char b[64]={0};size_t n=fread(b,1,63,f);fclose(f);return (n>=2&&b[0]==''3''&&(b[1]==''\n''||b[1]==''\r''))?0:1;}'
+$spjRunJson = @{
+    problem    = @{
+        title = "SPJ post-run data"; time_limit = 1000; memory_limit = 256
+        problem_type = "traditional"; compare_mode = "spj"
+        spj_code     = $spjChecker
+    }
+    test_cases = @(@{ input_data = "1 2`n"; output_data = "3`n"; score = 100 })
+} | ConvertTo-Json -Depth 6
+W "$work\spjrun.json" $spjRunJson
+$r = Run @("problem", "import", "$work\spjrun.json")
+$spjId = 0
+if ($r.out -match "Problem imported with ID: (\d+)") { $spjId = [int]$Matches[1] }
+Check "spj-run import" ($spjId -gt 0) $r.out
+$r = Run @("problem", "submit", "$spjId", "$work\ac.cpp", "--as", "dave")
+Check "spj submit AC" (($r.code -eq 0) -and ($r.out -match "Status: AC")) "code=$($r.code) out=$($r.out)"
+$r = Run @("problem", "submit", "$spjId", "$work\leak.cpp", "--as", "dave")
+Check "spj cwd no test data" (($r.code -eq 0) -and ($r.out -match "Status: AC")) "code=$($r.code) out=$($r.out)"
 
 Write-Host ""
 Write-Host "PASS: $script:pass  FAIL: $script:fail"

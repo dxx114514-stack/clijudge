@@ -1228,10 +1228,13 @@ struct TestCaseContext {
     bool trustedRun = false; // 可信运行 (communication_exec grader)
 };
 
+// ioDir: 选手沙箱工作目录 (含 _stdin/_stdout/_stderr/_meta, 是选手 cwd)
+// dataDir: 判题器专用目录 (baseDir/d_i, 非选手 cwd) — 测试数据文件只写这里
 inline TestCaseResult judgeTestCase(int tcId, int maxScore,
                                     const std::string& inputData,
                                     const std::string& expectedOutput,
                                     const std::string& ioDir,
+                                    const std::string& dataDir,
                                     const TestCaseContext& ctx) {
     TestCaseResult result;
     result.id = tcId;
@@ -1243,15 +1246,8 @@ inline TestCaseResult judgeTestCase(int tcId, int maxScore,
 
     fs::create_directories(ioDir);
 
-    // 输入/标准输出写文件 (SPJ 与比较都需要文件路径)
-    std::string inputPath = platform::pathJoin(ioDir, "test_input.txt");
-    std::string expectedPath = platform::pathJoin(ioDir, "test_expected.txt");
+    // 选手输出文件 (SPJ 运行时按绝对路径读取)
     std::string actualPath = platform::pathJoin(ioDir, "_stdout.txt");
-    if (!writeFileContent(inputPath, inputData) ||
-        !writeFileContent(expectedPath, expectedOutput)) {
-        result.message = "System Error: cannot write test data files";
-        return result;
-    }
 
     // 裸命令名 (python3/java/node) 无路径分隔符, 由执行层 PATH 解析, 此处无法 exists
     bool hasPathSep = ctx.exePath.find_first_of("/\\") != std::string::npos;
@@ -1291,11 +1287,22 @@ inline TestCaseResult judgeTestCase(int tcId, int maxScore,
     }
 
     // 比较 / Special Judge
+    // SPJ 才需要标准答案落盘: 且在选手进程结束后才写入 dataDir (非选手 cwd),
+    // 选手运行期间磁盘上不存在 test_expected.txt — 杜绝读答案作弊
     CompareResult cr;
     if (isSpecialJudgeMode(ctx.compareMode)) {
+        fs::create_directories(dataDir);
+        std::string inputPath = platform::pathJoin(dataDir, "test_input.txt");
+        std::string expectedPath = platform::pathJoin(dataDir, "test_expected.txt");
+        if (!writeFileContent(inputPath, inputData) ||
+            !writeFileContent(expectedPath, expectedOutput)) {
+            result.status = JudgeStatus::SYSTEM_ERROR;
+            result.message = "System Error: cannot write test data files";
+            return result;
+        }
         cr = runSpecialJudge(ctx.spjExe, ctx.compareMode,
                              inputPath, actualPath, expectedPath,
-                             maxScore, ioDir);
+                             maxScore, dataDir);
     } else {
         cr = compareOutputs(ctx.compareMode, expectedOutput, out.output,
                             maxScore, ctx.floatAbsTol, ctx.floatRelTol);
@@ -1547,12 +1554,13 @@ inline DualOutcome runDualProcess(const std::string& contestantExe,
 // 单个测试点: 双进程评测 + 判定 (interaction: grader 参数 = input result;
 // communication_exec: grader 无参数, 由其自身逻辑读取工作目录文件)
 inline TestCaseResult judgeDualTest(int tcId, int maxScore, const json& tc,
-                                    const std::string& contestantExe,
-                                    const std::vector<std::string>& contestantArgs,
-                                    const std::string& graderExe,
-                                    bool interactorStyle,
-                                    int timeLimitMs, int memoryLimitMB,
-                                    const std::string& ioDir) {
+                                     const std::string& contestantExe,
+                                     const std::vector<std::string>& contestantArgs,
+                                     const std::string& graderExe,
+                                     bool interactorStyle,
+                                     int timeLimitMs, int memoryLimitMB,
+                                     const std::string& ioDir,
+                                     const std::string& dataDir) {
     TestCaseResult r;
     r.id = tcId;
     r.score = 0;
@@ -1562,7 +1570,9 @@ inline TestCaseResult judgeDualTest(int tcId, int maxScore, const json& tc,
     r.memoryUsedKB = 0;
 
     fs::create_directories(ioDir);
-    std::string inputPath = platform::pathJoin(ioDir, "test_input.txt");
+    fs::create_directories(dataDir);
+    // 交互输入写入 dataDir (非选手 cwd): 选手无法从工作目录取用完整输入
+    std::string inputPath = platform::pathJoin(dataDir, "test_input.txt");
     if (!writeFileContent(inputPath, tc.value("input_data", ""))) {
         r.message = "System Error: cannot write test data file";
         return r;
@@ -1570,7 +1580,7 @@ inline TestCaseResult judgeDualTest(int tcId, int maxScore, const json& tc,
 
     std::vector<std::string> graderArgs;
     if (interactorStyle) {
-        std::string resultPath = platform::pathJoin(ioDir, "_grader_result.txt");
+        std::string resultPath = platform::pathJoin(dataDir, "_grader_result.txt");
         graderArgs = { inputPath, resultPath };
     }
 
@@ -2055,24 +2065,25 @@ inline JudgeResult judgeSubmission(
             local.timeLimitMs = (tcTimeLimit > 0) ? tcTimeLimit : defaultTimeLimit;
             local.memoryLimitMB = (tcMemoryLimit > 0) ? tcMemoryLimit : defaultMemoryLimit;
             std::string ioDir = platform::pathJoin(baseDir, "t_" + std::to_string(i));
+            std::string dataDir = platform::pathJoin(baseDir, "d_" + std::to_string(i));
 
-            // 测试点生成器: 评测前运行 generator <测试点编号>, 读取其工作目录 data.in/data.out
-            // 作为本测试点的输入与标准答案 (interaction 由交互器供输入, answers_only 不使用)
+            // 测试点生成器: 评测前运行 generator <测试点号>, 在 dataDir 写 data.in/data.out
+            // 作为该测试点输入与标准答案 (interaction 由交互器供输入, answers_only 不使用)
             std::string inData = tc.value("input_data", "");
             std::string outData = tc.value("output_data", "");
             if (generatorReady && !isAnswers && !isDual) {
-                fs::create_directories(ioDir);
+                fs::create_directories(dataDir);
                 RunOutcome g = runProgram(genExe, {std::to_string(tcId)}, "",
                                           GENERATOR_TIME_LIMIT_MS, GENERATOR_MEMORY_LIMIT_MB,
-                                          ioDir, "", settings::getFileWriteLimitBytes(),
-                                          /*trusted=*/true);  // 生成器需在工作目录写 data.in/data.out
+                                          dataDir, "", settings::getFileWriteLimitBytes(),
+                                          /*trusted=*/true);  // 生成器在 dataDir 写 data.in/data.out
                 std::string genErr;
                 if (g.status != JudgeStatus::ACCEPTED) {
                     genErr = "generator failed on test point " + std::to_string(tcId) +
                              ": " + g.message;
                 } else {
-                    std::string dataIn = platform::pathJoin(ioDir, "data.in");
-                    std::string dataOut = platform::pathJoin(ioDir, "data.out");
+                    std::string dataIn = platform::pathJoin(dataDir, "data.in");
+                    std::string dataOut = platform::pathJoin(dataDir, "data.out");
                     if (!fs::exists(dataIn)) {
                         genErr = "generator did not create data.in (test point " +
                                  std::to_string(tcId) + ")";
@@ -2083,6 +2094,8 @@ inline JudgeResult judgeSubmission(
                         inData = readFileContent(dataIn);
                         outData = readFileContent(dataOut);
                     }
+                    // 生成结果已读入内存, 立即删除 — 选手运行期间磁盘不保留 data.out(答案)
+                    { std::error_code ecx; fs::remove(dataIn, ecx); fs::remove(dataOut, ecx); }
                 }
                 if (!genErr.empty()) {
                     TestCaseResult& r = testResults[i];
@@ -2107,7 +2120,7 @@ inline JudgeResult judgeSubmission(
                 testResults[i] = judgeDualTest(
                     tcId, tcScore, tc, cr.exePath, cr.exeArgs, graderExe,
                     /*interactorStyle=*/true,
-                    local.timeLimitMs, local.memoryLimitMB, ioDir);
+                    local.timeLimitMs, local.memoryLimitMB, ioDir, dataDir);
             } else if (isCommExec) {
                 // grader 与选手 exe 拷入本测试工作目录 (grader 以相对名启动选手)
                 fs::create_directories(ioDir);
@@ -2141,13 +2154,13 @@ inline JudgeResult judgeSubmission(
                     tcId, tcScore,
                     inData,
                     outData,
-                    ioDir, local2);
+                    ioDir, dataDir, local2);
             } else {
                 testResults[i] = judgeTestCase(
                     tcId, tcScore,
                     inData,
                     outData,
-                    ioDir, local);
+                    ioDir, dataDir, local);
             }
         }
     };
